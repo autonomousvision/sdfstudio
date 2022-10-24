@@ -49,6 +49,7 @@ from nerfstudio.model_components.renderers import (
 from nerfstudio.model_components.scene_colliders import NearFarCollider
 from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.utils import colormaps
+from nerfstudio.utils.colors import get_color
 
 
 @dataclass
@@ -60,7 +61,7 @@ class NerfactoModelConfig(ModelConfig):
     """How far along the ray to start sampling."""
     far_plane: float = 1000.0
     """How far along the ray to stop sampling."""
-    background_color: Literal["background", "last_sample"] = "last_sample"
+    background_color: Literal["random", "last_sample", "white", "black"] = "last_sample"
     """Whether to randomize the background color."""
     num_proposal_samples_per_ray: Tuple[int] = (256, 96)
     """Number of samples per ray for the proposal network."""
@@ -159,7 +160,12 @@ class NerfactoModel(Model):
         self.collider = NearFarCollider(near_plane=self.config.near_plane, far_plane=self.config.far_plane)
 
         # renderers
-        self.renderer_rgb = RGBRenderer(background_color=self.config.background_color)
+        background_color = (
+            get_color(self.config.background_color)
+            if self.config.background_color in set(["white", "black"])
+            else self.config.background_color
+        )
+        self.renderer_rgb = RGBRenderer(background_color=background_color)
         self.renderer_accumulation = AccumulationRenderer()
         self.renderer_depth = DepthRenderer()
 
