@@ -78,6 +78,8 @@ class InstantNGPModelConfig(ModelConfig):
     """Whether to use an appearance embedding."""
     randomize_background: bool = True
     """Whether to randomize the background color."""
+    alpha_thre: float = 1e-2
+    """alpha thres for visibility pruning in nerfacc, should set to 0 for the nerf-synthetic dataset"""
 
 
 class NGPModel(Model):
@@ -172,6 +174,7 @@ class NGPModel(Model):
                 far_plane=self.config.far_plane,
                 render_step_size=self.config.render_step_size,
                 cone_angle=self.config.cone_angle,
+                alpha_thre=self.config.alpha_thre,
             )
 
         field_outputs = self.field(ray_samples)
