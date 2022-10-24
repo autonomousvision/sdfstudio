@@ -37,6 +37,7 @@ from nerfstudio.models.semantic_nerfw import SemanticNerfWModelConfig
 from nerfstudio.models.vanilla_nerf import NeRFModel
 from nerfstudio.pipelines.base_pipeline import VanillaPipelineConfig
 from nerfstudio.pipelines.dynamic_batch import DynamicBatchPipelineConfig
+from nerfstudio.engine.schedulers import MultiStepSchedulerConfig
 
 method_configs: Dict[str, Config] = {}
 descriptions = {
@@ -50,7 +51,7 @@ descriptions = {
 method_configs["nerfacto"] = Config(
     method_name="nerfacto",
     trainer=TrainerConfig(
-        steps_per_eval_batch=500, steps_per_save=2000, max_num_iterations=30000, mixed_precision=True
+        steps_per_eval_batch=5000, steps_per_save=20000, max_num_iterations=300000, mixed_precision=True
     ),
     pipeline=VanillaPipelineConfig(
         datamanager=VanillaDataManagerConfig(
@@ -66,11 +67,11 @@ method_configs["nerfacto"] = Config(
     optimizers={
         "proposal_networks": {
             "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
-            "scheduler": None,
+            "scheduler": MultiStepSchedulerConfig(max_steps=300000),
         },
         "fields": {
             "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
-            "scheduler": None,
+            "scheduler": MultiStepSchedulerConfig(max_steps=300000),
         },
     },
     viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
@@ -80,16 +81,21 @@ method_configs["nerfacto"] = Config(
 method_configs["instant-ngp"] = Config(
     method_name="instant-ngp",
     trainer=TrainerConfig(
-        steps_per_eval_batch=500, steps_per_save=2000, max_num_iterations=30000, mixed_precision=True
+        steps_per_eval_batch=5000,
+        steps_per_eval_image=5000,
+        steps_per_save=20000,
+        max_num_iterations=20001,
+        mixed_precision=True,
+        steps_per_eval_all_images=20000,
     ),
     pipeline=DynamicBatchPipelineConfig(
         datamanager=VanillaDataManagerConfig(dataparser=NerfstudioDataParserConfig(), train_num_rays_per_batch=8192),
-        model=InstantNGPModelConfig(eval_num_rays_per_chunk=8192),
+        model=InstantNGPModelConfig(render_step_size=0.005, eval_num_rays_per_chunk=8192),
     ),
     optimizers={
         "fields": {
             "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
-            "scheduler": None,
+            "scheduler": MultiStepSchedulerConfig(max_steps=20000),
         }
     },
     viewer=ViewerConfig(num_rays_per_chunk=64000),
