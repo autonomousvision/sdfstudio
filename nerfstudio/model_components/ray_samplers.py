@@ -26,6 +26,7 @@ from torch import nn
 from torchtyping import TensorType
 
 from nerfstudio.cameras.rays import Frustums, RayBundle, RaySamples
+from nerfstudio.model_components.losses import ray_samples_to_sdist
 
 
 class Sampler(nn.Module):
@@ -575,3 +576,239 @@ class ProposalNetworkSampler(Sampler):
 
         assert ray_samples is not None
         return ray_samples, weights_list, ray_samples_list
+
+
+# TODO make this configurable
+class ErrorBoundedSampler(Sampler):
+    """VolSDF's error bounded sampler that uses a sdf network to generate samples."""
+
+    def __init__(
+        self,
+        num_samples: int = 64,
+        num_samples_eval: int = 128,
+        num_samples_extra: int = 32,
+        eps: float = 0.1,
+        beta_iters: int = 10,
+        max_total_iters: int = 5,
+        add_tiny: float = 1e-6,
+        single_jitter: bool = False,
+    ) -> None:
+        super().__init__()
+        self.num_samples = num_samples
+        self.num_samples_eval = num_samples_eval
+        self.num_samples_extra = num_samples_extra
+        self.eps = eps
+        self.beta_iters = beta_iters
+        self.max_total_iters = max_total_iters
+        self.add_tiny = add_tiny
+        self.single_jitter = single_jitter
+
+        # samplers
+        self.uniform_sampler = UniformSampler(single_jitter=single_jitter)
+        self.pdf_sampler_include = PDFSampler(include_original=True, single_jitter=single_jitter, histogram_padding=1e-5)
+        self.pdf_sampler_no_include = PDFSampler(include_original=False, single_jitter=single_jitter, histogram_padding=1e-5)
+
+    def generate_ray_samples(
+        self,
+        ray_bundle: Optional[RayBundle] = None,
+        density_fn: Optional[Callable] = None,
+        sdf_fn: Optional[Callable] = None,
+    ) -> Tuple[RaySamples, List, List]:
+        assert ray_bundle is not None
+        assert density_fn is not None
+        assert sdf_fn is not None
+
+        beta0 = density_fn.get_beta().detach()
+
+        # Start with uniform sampling
+        ray_samples = self.uniform_sampler(ray_bundle, num_samples=self.num_samples_eval)
+        
+        if 1 + 1 > 3:
+            sampled_points = ray_samples.frustums.get_positions().view(-1, 3)
+            idx = torch.randint(sampled_points.shape[0], (ray_samples.shape[0] * 10,)).to(sampled_points.device)
+            points = sampled_points[idx]
+        
+            return ray_samples, points
+
+        # Get maximum beta from the upper bound (Lemma 2)
+        deltas = ray_samples.deltas.squeeze(-1)
+        dists = (deltas[:, :-1] + deltas[:, 1:]) / 2.0
+        bound = (1.0 / (4.0 * torch.log(torch.tensor(self.eps + 1.0)))) * (dists**2.0).sum(-1)
+        beta = torch.sqrt(bound)
+
+        total_iters, not_converge = 0, True
+        samples_idx = None
+
+        # breakpoint()
+
+        # Algorithm 1
+        while not_converge and total_iters < self.max_total_iters:
+            # TODO new_samples = ray_samples
+            # TODO change to left rectangle relu so that we don't re evaluate the SDF function which is very slow when there are a lots points
+            # Calculating the SDF only for the new sampled points
+            with torch.no_grad():
+                sdf = sdf_fn(ray_samples)
+            print("sampling:", total_iters, ray_samples.shape)
+            # Calculating the bound d* (Theorem 1)
+            d_star = self.get_dstar(sdf, ray_samples)
+
+            # Updating beta using line search
+            beta = self.get_updated_beta(beta0, beta, density_fn, sdf, d_star, ray_samples)
+
+            # Upsample more points
+            density = density_fn(sdf.reshape(ray_samples.shape), beta=beta.unsqueeze(-1))
+
+            weights, transmittance = ray_samples.get_weights_and_transmitance(density.unsqueeze(-1))
+
+            #  Check if we are done and this is the last sampling
+            total_iters += 1
+            not_converge = beta.max() > beta0
+
+            if not_converge and total_iters < self.max_total_iters:
+                # Sample more points proportional to the current error bound
+                deltas = ray_samples.deltas.squeeze(-1)
+                dists = (deltas[:, :-1] + deltas[:, 1:]) / 2.0
+        
+                error_per_section = (
+                    torch.exp(-d_star / beta.unsqueeze(-1)) * (dists ** 2.0) / (4 * beta.unsqueeze(-1) ** 2)
+                )
+                error_integral = torch.cumsum(error_per_section, dim=-1)
+                weights = (torch.clamp(torch.exp(error_integral), max=1.0e6) - 1.0) * transmittance[:, :-1, 0]
+                
+                # need to pad here because we use left rectangle rules and it lack of
+                weights = torch.cat(
+                    [weights, torch.zeros((*weights.shape[:1], 1), device=weights.device)], dim=-1
+                )
+                # print(total_iters, weights.max(), weights.sum(dim=-1).max(), weights.shape)
+                ray_samples = self.pdf_sampler_include(ray_bundle, ray_samples, weights.unsqueeze(-1), num_samples=self.num_samples_eval)
+
+            else:
+                # Sample the final sample set to be used in the volume rendering integral
+                ray_samples = self.pdf_sampler_no_include(ray_bundle, ray_samples, weights, num_samples=self.num_samples)
+        
+        #TODO sample points uniformly in other place
+        # sample some of the near surface points for eikonal loss
+        sampled_points = ray_samples.frustums.get_positions().view(-1, 3)
+        idx = torch.randint(sampled_points.shape[0], (ray_samples.shape[0] * 10,)).to(sampled_points.device)
+        
+        points = sampled_points[idx]
+
+        #save_points("p1.ply", ray_samples.frustums.get_positions().view(-1, 3).cpu().numpy())
+
+        # TODO Add extra samples
+        ray_samples_uniform = self.uniform_sampler(ray_bundle, num_samples=self.num_samples_extra)
+
+        existing_bins = torch.cat(
+            [
+                ray_samples.spacing_starts[..., 0],
+                ray_samples.spacing_ends[..., -1:, 0],
+            ],
+            dim=-1,
+        )
+
+        bins = torch.cat(
+            [
+                ray_samples_uniform.spacing_starts[..., 0],
+                ray_samples_uniform.spacing_ends[..., -1:, 0],
+            ],
+            dim=-1,
+        )
+
+        
+        bins, _ = torch.sort(torch.cat([existing_bins, bins], -1), -1)
+    
+        # Stop gradients
+        bins = bins.detach()
+
+        euclidean_bins = ray_samples.spacing_to_euclidean_fn(bins)
+
+        ray_samples = ray_bundle.get_ray_samples(
+            bin_starts=euclidean_bins[..., :-1, None],
+            bin_ends=euclidean_bins[..., 1:, None],
+            spacing_starts=bins[..., :-1, None],
+            spacing_ends=bins[..., 1:, None],
+            spacing_to_euclidean_fn=ray_samples.spacing_to_euclidean_fn,
+        )
+
+        #TODO add extra points uniformly within the bbox for eikonal loss
+
+
+        # save ray samples for visualization
+        #if total_iters >= 2:
+        #print(ray_samples.shape, beta0)
+        
+        #save_points("p2.ply", ray_samples.frustums.get_positions().view(-1, 3).cpu().numpy())
+        #exit(-1)
+        
+        assert ray_samples is not None
+        return ray_samples, points
+
+    def get_dstar(self, sdf, ray_samples: RaySamples):
+        """Calculating the bound d* (Theorem 1) from VolSDF"""
+        d = sdf.reshape(ray_samples.shape)
+        deltas = ray_samples.deltas.squeeze(-1)
+        dists = (deltas[:, :-1] + deltas[:, 1:]) / 2.0
+        a, b, c = dists, d[:, :-1].abs(), d[:, 1:].abs()
+        first_cond = a.pow(2) + b.pow(2) <= c.pow(2)
+        second_cond = a.pow(2) + c.pow(2) <= b.pow(2)
+        d_star = torch.zeros(ray_samples.shape[0], ray_samples.shape[1] - 1).cuda()
+        d_star[first_cond] = b[first_cond]
+        d_star[second_cond] = c[second_cond]
+        s = (a + b + c) / 2.0
+        area_before_sqrt = s * (s - a) * (s - b) * (s - c)
+        mask = ~first_cond & ~second_cond & (b + c - a > 0)
+        d_star[mask] = (2.0 * torch.sqrt(area_before_sqrt[mask])) / (a[mask])
+        d_star = (d[:, 1:].sign() * d[:, :-1].sign() == 1) * d_star  # Fixing the sign
+        breakpoint()
+        return d_star
+
+    def get_updated_beta(self, beta0, beta, density_fn, sdf, d_star, ray_samples: RaySamples):
+        curr_error = self.get_error_bound(beta0, density_fn, sdf, d_star, ray_samples)
+        beta[curr_error <= self.eps] = beta0
+        beta_min, beta_max = beta0.repeat(ray_samples.shape[0]), beta
+        for j in range(self.beta_iters):
+            beta_mid = (beta_min + beta_max) / 2.0
+            curr_error = self.get_error_bound(beta_mid.unsqueeze(-1), density_fn, sdf, d_star, ray_samples)
+            beta_max[curr_error <= self.eps] = beta_mid[curr_error <= self.eps]
+            beta_min[curr_error > self.eps] = beta_mid[curr_error > self.eps]
+        beta = beta_max
+        return beta
+
+    def get_error_bound(self, beta, density_fn, sdf, d_star, ray_samples):
+        """Get error bound from VolSDF"""
+        density = density_fn(sdf.reshape(ray_samples.shape), beta=beta)
+
+        deltas = ray_samples.deltas.squeeze(-1)
+        dists = (deltas[:, :-1] + deltas[:, 1:]) / 2.0
+        
+        shifted_free_energy = torch.cat([torch.zeros(dists.shape[0], 1).cuda(), dists * density[:, :-1]], dim=-1)
+        integral_estimation = torch.cumsum(shifted_free_energy, dim=-1)
+        error_per_section = torch.exp(-d_star / beta) * (dists ** 2.) / (4 * beta ** 2)
+        error_integral = torch.cumsum(error_per_section, dim=-1)
+        bound_opacity = (torch.clamp(torch.exp(error_integral), max=1.e6) - 1.0) * torch.exp(-integral_estimation[:, :-1])
+        
+        return bound_opacity.max(-1)[0]
+
+
+def save_points(path_save, pts, colors = None, normals = None, BRG2RGB=False):
+    '''save points to point cloud using open3d
+    '''
+    assert len(pts) > 0
+    if colors is not None:
+        assert colors.shape[1] == 3
+    assert pts.shape[1] == 3
+    import open3d as o3d
+    cloud = o3d.geometry.PointCloud()
+    cloud.points = o3d.utility.Vector3dVector(pts)
+    if colors is not None:
+        # Open3D assumes the color values are of float type and in range [0, 1]
+        if np.max(colors) > 1:
+            colors = colors / np.max(colors)
+        if BRG2RGB:
+            colors = np.stack([colors[:, 2], colors[:, 1], colors[:, 0]], axis=-1)
+        cloud.colors = o3d.utility.Vector3dVector(colors) 
+    if normals is not None:
+        cloud.normals = o3d.utility.Vector3dVector(normals) 
+
+    o3d.io.write_point_cloud(path_save, cloud)
+    

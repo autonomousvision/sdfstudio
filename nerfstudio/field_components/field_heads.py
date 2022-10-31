@@ -36,6 +36,7 @@ class FieldHeadNames(Enum):
     SEMANTICS = "semantics"
     SEMANTICS_STUFF = "semantics_stuff"
     SEMANTICS_THING = "semantics_thing"
+    NORMAL = "normal"
 
 
 class FieldHead(FieldComponent):

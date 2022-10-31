@@ -1,0 +1,355 @@
+# Copyright 2022 The Nerfstudio Team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""
+Field for compound nerf model, adds scene contraction and image embeddings to instant ngp
+"""
+
+
+from turtle import position
+from typing import Dict, List, Optional, Tuple, Union
+
+import numpy as np
+import torch
+from torch import nn
+from torch.nn.parameter import Parameter
+from torchtyping import TensorType
+
+from nerfstudio.cameras.rays import RaySamples
+from nerfstudio.data.scene_box import SceneBox
+from nerfstudio.field_components.activations import trunc_exp
+from nerfstudio.field_components.embedding import Embedding
+from nerfstudio.field_components.encodings import NeRFEncoding
+from nerfstudio.field_components.field_heads import FieldHeadNames, RGBFieldHead, FieldComponent
+from nerfstudio.field_components.mlp import MLP
+from nerfstudio.field_components.spatial_distortions import (
+    SceneContraction,
+    SpatialDistortion,
+)
+from nerfstudio.fields.base_field import Field
+
+try:
+    import tinycudann as tcnn
+except ImportError:
+    # tinycudann module doesn't exist
+    pass
+
+
+class LaplaceDensity(nn.Module):  # alpha * Laplace(loc=0, scale=beta).cdf(-sdf)
+    """Laplace density from VolSDF"""
+
+    def __init__(self, init_val, beta_min=0.0001):
+        super().__init__()
+        self.beta_min = torch.tensor(beta_min).cuda()
+        self.register_parameter("beta", nn.Parameter(init_val * torch.ones(1), requires_grad=True))
+
+    def forward(
+        self, sdf: TensorType["bs":...], beta: Union[TensorType["bs":...], None] = None
+    ) -> TensorType["bs":...]:
+        """convert sdf value to density value with beta, if beta is missing, then use learable beta"""
+
+        if beta is None:
+            beta = self.get_beta()
+
+        alpha = 1.0 / beta
+        return alpha * (0.5 + 0.5 * sdf.sign() * torch.expm1(-sdf.abs() / beta))
+
+    def get_beta(self):
+        """return current beta value"""
+        beta = self.beta.abs() + self.beta_min
+        return beta
+
+
+class SDFField(Field):
+    """_summary_
+
+    Args:
+        Field (_type_): _description_
+    """
+
+    def __init__(
+        self,
+        aabb,
+        num_images: int,
+        num_layers: int = 2,
+        hidden_dim: int = 256,
+        geo_feat_dim: int = 256,
+        skip_in: List = [4],
+        num_layers_color: int = 2,
+        hidden_dim_color: int = 256,
+        appearance_embedding_dim: int = 32,
+        bias: float = 0.5,
+        geometric_init: bool = True,
+        inside_outside: bool = False,
+        weight_norm: bool = True,
+        use_average_appearance_embedding: bool = False,
+        spatial_distortion: Optional[SpatialDistortion] = None,
+        use_grid_feature: bool = True,
+        divide_factor: float = 2.0,
+    ) -> None:
+        super().__init__()
+
+        self.aabb = Parameter(aabb, requires_grad=False)
+        self.geo_feat_dim = geo_feat_dim
+
+        self.spatial_distortion = spatial_distortion
+        self.num_images = num_images
+        self.appearance_embedding_dim = appearance_embedding_dim
+        self.embedding_appearance = Embedding(self.num_images, self.appearance_embedding_dim)
+        self.use_average_appearance_embedding = use_average_appearance_embedding
+        self.use_grid_feature = use_grid_feature
+        self.divide_factor = divide_factor
+
+        num_levels = 16
+        max_res = 2048
+        base_res = 16
+        log2_hashmap_size = 19
+        features_per_level = 2
+        use_hash = True
+        smoothstep = True
+        growth_factor = np.exp((np.log(max_res) - np.log(base_res)) / (num_levels - 1))
+
+        # feature encoding
+        self.encoding = tcnn.Encoding(
+            n_input_dims=3,
+            encoding_config={
+                "otype": "HashGrid" if use_hash else "DenseGrid",
+                "n_levels": num_levels,
+                "n_features_per_level": features_per_level,
+                "log2_hashmap_size": log2_hashmap_size,
+                "base_resolution": base_res,
+                "per_level_scale": growth_factor,
+                "interpolation": "Smoothstep" if smoothstep else "Linear",
+            },
+        )
+
+        # we concat inputs position ourselves
+        self.position_encoding = NeRFEncoding(
+            in_dim=3, num_frequencies=6, min_freq_exp=0.0, max_freq_exp=5.0, include_input=False
+        )
+
+        self.direction_encoding = NeRFEncoding(
+            in_dim=3, num_frequencies=4, min_freq_exp=0.0, max_freq_exp=3.0, include_input=True
+        )
+
+        # TODO move it to field components
+        # MLP with geometric initialization
+        dims = [hidden_dim for _ in range(num_layers)]
+        in_dim = 3 + self.position_encoding.get_out_dim() + self.encoding.n_output_dims
+        dims = [in_dim] + dims + [1 + geo_feat_dim]
+        self.num_layers = len(dims)
+        self.skip_in = skip_in
+
+        for l in range(0, self.num_layers - 1):
+            if l + 1 in self.skip_in:
+                out_dim = dims[l + 1] - dims[0]
+            else:
+                out_dim = dims[l + 1]
+
+            lin = nn.Linear(dims[l], out_dim)
+
+            if geometric_init:
+                if l == self.num_layers - 2:
+                    if not inside_outside:
+                        torch.nn.init.normal_(lin.weight, mean=np.sqrt(np.pi) / np.sqrt(dims[l]), std=0.0001)
+                        torch.nn.init.constant_(lin.bias, -bias)
+                    else:
+                        torch.nn.init.normal_(lin.weight, mean=-np.sqrt(np.pi) / np.sqrt(dims[l]), std=0.0001)
+                        torch.nn.init.constant_(lin.bias, bias)
+                elif l == 0:
+                    torch.nn.init.constant_(lin.bias, 0.0)
+                    torch.nn.init.constant_(lin.weight[:, 3:], 0.0)
+                    torch.nn.init.normal_(lin.weight[:, :3], 0.0, np.sqrt(2) / np.sqrt(out_dim))
+                elif l in self.skip_in:
+                    torch.nn.init.constant_(lin.bias, 0.0)
+                    torch.nn.init.normal_(lin.weight, 0.0, np.sqrt(2) / np.sqrt(out_dim))
+                    torch.nn.init.constant_(lin.weight[:, -(dims[0] - 3) :], 0.0)
+                else:
+                    torch.nn.init.constant_(lin.bias, 0.0)
+                    torch.nn.init.normal_(lin.weight, 0.0, np.sqrt(2) / np.sqrt(out_dim))
+
+            if weight_norm:
+                lin = nn.utils.weight_norm(lin)
+                print("=======", lin.weight.shape)
+            setattr(self, "glin" + str(l), lin)
+
+        # TODO make this configurable
+        self.laplace_density = LaplaceDensity(init_val=0.1)
+
+        # color network
+        dims = [hidden_dim_color for _ in range(num_layers_color)]
+        # point, view_direction, normal, feature, embedding
+        in_dim = (
+            3 + self.direction_encoding.get_out_dim() + 3 + self.geo_feat_dim + self.embedding_appearance.get_out_dim()
+        )
+        dims = [in_dim] + dims + [3]
+        self.num_layers_color = len(dims)
+
+        for l in range(0, self.num_layers_color - 1):
+            out_dim = dims[l + 1]
+            lin = nn.Linear(dims[l], out_dim)
+
+            if weight_norm:
+                lin = nn.utils.weight_norm(lin)
+            print("=======", lin.weight.shape)
+            setattr(self, "clin" + str(l), lin)
+
+        self.softplus = nn.Softplus(beta=100)
+        self.relu = nn.ReLU()
+        self.sigmoid = torch.nn.Sigmoid()
+
+    def forward_geonetwork(self, inputs):
+        """forward the geonetwork"""
+        if self.use_grid_feature:
+            # TODO check how we should normalize the points
+            # normalize point range as encoding assume points are in [-1, 1]
+            positions = inputs / self.divide_factor
+            positions = (positions + 2.0) / 4.0
+            feature = self.encoding(positions)
+            # raise NotImplementedError
+        else:
+            feature = torch.zeros_like(inputs[:, :1].repeat(1, self.encoding.n_output_dims))
+
+        pe = self.position_encoding(inputs)
+
+        inputs = torch.cat((inputs, pe, feature), dim=-1)
+
+        x = inputs
+
+        for l in range(0, self.num_layers - 1):
+            lin = getattr(self, "glin" + str(l))
+
+            if l in self.skip_in:
+                x = torch.cat([x, inputs], 1) / np.sqrt(2)
+
+            x = lin(x)
+
+            if l < self.num_layers - 2:
+                x = self.softplus(x)
+        return x
+
+    def get_sdf(self, ray_samples: RaySamples):
+        """predict the sdf value for ray samples"""
+        positions = ray_samples.frustums.get_positions()
+        positions_flat = positions.view(-1, 3)
+        h = self.forward_geonetwork(positions_flat).view(*ray_samples.frustums.shape, -1)
+        sdf, _ = torch.split(h, [1, self.geo_feat_dim], dim=-1)
+        return sdf
+
+    def gradient(self, x):
+        """compute the gradient of the ray"""
+        x.requires_grad_(True)
+        y = self.forward_geonetwork(x)[:, :1]
+        d_output = torch.ones_like(y, requires_grad=False, device=y.device)
+        gradients = torch.autograd.grad(
+            outputs=y, inputs=x, grad_outputs=d_output, create_graph=True, retain_graph=True, only_inputs=True
+        )[0]
+        return gradients
+
+    def get_density(self, ray_samples: RaySamples):
+        """Computes and returns the densities."""
+        positions = ray_samples.frustums.get_positions()
+        positions_flat = positions.view(-1, 3)
+        h = self.forward_geonetwork(positions_flat).view(*ray_samples.frustums.shape, -1)
+        sdf, geo_feature = torch.split(h, [1, self.geo_feat_dim], dim=-1)
+        density = self.laplace_density(sdf)
+        return density, geo_feature
+
+    def get_colors(self, points, directions, normals, geo_features, camera_indices):
+        """compute colors"""
+        d = self.direction_encoding(directions)
+
+        # TODO make appearance embedding optional
+        # appearance
+        if self.training:
+            embedded_appearance = self.embedding_appearance(camera_indices)
+            # TODO fake embedding here
+            embedded_appearance = torch.zeros_like(embedded_appearance)
+        else:
+            if self.use_average_appearance_embedding:
+                embedded_appearance = torch.ones(
+                    (*directions.shape[:-1], self.appearance_embedding_dim), device=directions.device
+                ) * self.embedding_appearance.mean(dim=0)
+            else:
+                embedded_appearance = torch.zeros(
+                    (*directions.shape[:-1], self.appearance_embedding_dim), device=directions.device
+                )
+
+        h = torch.cat(
+            [
+                points,
+                d,
+                normals,
+                geo_features.view(-1, self.geo_feat_dim),
+                embedded_appearance.view(-1, self.appearance_embedding_dim),
+            ],
+            dim=-1,
+        )
+
+        for l in range(0, self.num_layers_color - 1):
+            lin = getattr(self, "clin" + str(l))
+
+            h = lin(h)
+
+            if l < self.num_layers_color - 2:
+                h = self.relu(h)
+
+        rgb = self.sigmoid(h)
+        return rgb
+
+    def get_outputs(self, ray_samples: RaySamples):
+        """compute output of ray samples"""
+        if ray_samples.camera_indices is None:
+            raise AttributeError("Camera indices are not provided.")
+
+        outputs = {}
+
+        camera_indices = ray_samples.camera_indices.squeeze()
+
+        inputs = ray_samples.frustums.get_positions()
+        inputs = inputs.view(-1, 3)
+
+        directions = ray_samples.frustums.directions
+        directions_flat = directions.reshape(-1, 3)
+
+        inputs.requires_grad_(True)
+        with torch.enable_grad():
+            h = self.forward_geonetwork(inputs)
+            sdf, geo_feature = torch.split(h, [1, self.geo_feat_dim], dim=-1)
+        d_output = torch.ones_like(sdf, requires_grad=False, device=sdf.device)
+        gradients = torch.autograd.grad(
+            outputs=sdf, inputs=inputs, grad_outputs=d_output, create_graph=True, retain_graph=True, only_inputs=True
+        )[0]
+
+        rgb = self.get_colors(inputs, directions_flat, gradients, geo_feature, camera_indices)
+
+        density = self.laplace_density(sdf)
+
+        rgb = rgb.view(*ray_samples.frustums.directions.shape[:-1], -1)
+        density = density.view(*ray_samples.frustums.directions.shape[:-1], -1)
+        gradients = gradients.view(*ray_samples.frustums.directions.shape[:-1], -1)
+        normals = torch.nn.functional.normalize(gradients, p=2, dim=-1)
+
+        outputs.update({FieldHeadNames.RGB: rgb, FieldHeadNames.DENSITY: density, FieldHeadNames.NORMAL: normals})
+
+        return outputs
+
+    def forward(self, ray_samples: RaySamples):
+        """Evaluates the field at points along the ray.
+
+        Args:
+            ray_samples: Samples to evaluate field on.
+        """
+        field_outputs = self.get_outputs(ray_samples)
+        return field_outputs

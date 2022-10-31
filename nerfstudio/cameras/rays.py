@@ -17,7 +17,7 @@ Some ray datastructures.
 """
 import random
 from dataclasses import dataclass
-from typing import Callable, Dict, Optional
+from typing import Callable, Dict, Optional, Tuple
 
 import torch
 from torchtyping import TensorType
@@ -122,6 +122,31 @@ class RaySamples(TensorDataclass):
         weights = alphas * transmittance  # [..., "num_samples"]
 
         return weights
+
+    def get_weights_and_transmitance(
+        self, densities: TensorType[..., "num_samples", 1]
+    ) -> Tuple[TensorType[..., "num_samples", 1], TensorType[..., "num_samples", 1]]:
+        """Return weights and transmittance based on predicted densities
+
+        Args:
+            densities: Predicted densities for samples along ray
+
+        Returns:
+            Weights and transmittance for each sample
+        """
+
+        delta_density = self.deltas * densities
+        alphas = 1 - torch.exp(-delta_density)
+
+        transmittance = torch.cumsum(delta_density[..., :-1, :], dim=-2)
+        transmittance = torch.cat(
+            [torch.zeros((*transmittance.shape[:1], 1, 1), device=densities.device), transmittance], dim=-2
+        )
+        transmittance = torch.exp(-transmittance)  # [..., "num_samples"]
+
+        weights = alphas * transmittance  # [..., "num_samples"]
+
+        return weights, transmittance
 
 
 @dataclass

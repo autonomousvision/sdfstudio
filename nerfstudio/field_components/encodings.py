@@ -140,7 +140,8 @@ class NeRFEncoding(Encoding):
         Returns:
             Output values will be between -1 and 1
         """
-        in_tensor = 2 * torch.pi * in_tensor  # scale to [0, 2pi]
+        # TODO check scaling here but just comment it for now
+        # in_tensor = 2 * torch.pi * in_tensor  # scale to [0, 2pi]
         freqs = 2 ** torch.linspace(self.min_freq, self.max_freq, self.num_frequencies).to(in_tensor.device)
         scaled_inputs = in_tensor[..., None] * freqs  # [..., "input_dim", "num_scales"]
         scaled_inputs = scaled_inputs.view(*scaled_inputs.shape[:-2], -1)  # [..., "input_dim" * "num_scales"]
