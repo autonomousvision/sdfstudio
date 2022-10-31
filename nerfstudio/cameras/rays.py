@@ -49,6 +49,20 @@ class Frustums(TensorDataclass):
         """
         return self.origins + self.directions * (self.starts + self.ends) / 2
 
+    def get_start_positions(self) -> TensorType[..., 3]:
+        """Calulates "start" position of frustum. We use start positions for MonoSDF
+        because when we use error bounded sampling, we need to upsample many times.
+        It's hard to merge two set of ray samples while keeping the mid points fixed.
+        Every time we up sample the points the mid points will change and
+        therefore we need to evaluate all points again which is 3 times slower.
+        But we can skip the evaluation of sdf value if we use start position instead of mid position
+        because after we merge the points, the starting point is the same and only the delta is changed.
+
+        Returns:
+            xyz positions.
+        """
+        return self.origins + self.directions * self.starts
+
     def get_gaussian_blob(self) -> Gaussians:
         """Calculates guassian approximation of conical frustum.
 

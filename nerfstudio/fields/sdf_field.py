@@ -82,11 +82,11 @@ class SDFField(Field):
         self,
         aabb,
         num_images: int,
-        num_layers: int = 2,
+        num_layers: int = 8,
         hidden_dim: int = 256,
         geo_feat_dim: int = 256,
         skip_in: List = [4],
-        num_layers_color: int = 2,
+        num_layers_color: int = 4,
         hidden_dim_color: int = 256,
         appearance_embedding_dim: int = 32,
         bias: float = 0.5,
@@ -95,7 +95,7 @@ class SDFField(Field):
         weight_norm: bool = True,
         use_average_appearance_embedding: bool = False,
         spatial_distortion: Optional[SpatialDistortion] = None,
-        use_grid_feature: bool = True,
+        use_grid_feature: bool = False,
         divide_factor: float = 2.0,
     ) -> None:
         super().__init__()
@@ -241,7 +241,7 @@ class SDFField(Field):
 
     def get_sdf(self, ray_samples: RaySamples):
         """predict the sdf value for ray samples"""
-        positions = ray_samples.frustums.get_positions()
+        positions = ray_samples.frustums.get_start_positions()
         positions_flat = positions.view(-1, 3)
         h = self.forward_geonetwork(positions_flat).view(*ray_samples.frustums.shape, -1)
         sdf, _ = torch.split(h, [1, self.geo_feat_dim], dim=-1)
@@ -259,7 +259,7 @@ class SDFField(Field):
 
     def get_density(self, ray_samples: RaySamples):
         """Computes and returns the densities."""
-        positions = ray_samples.frustums.get_positions()
+        positions = ray_samples.frustums.get_start_positions()
         positions_flat = positions.view(-1, 3)
         h = self.forward_geonetwork(positions_flat).view(*ray_samples.frustums.shape, -1)
         sdf, geo_feature = torch.split(h, [1, self.geo_feat_dim], dim=-1)
@@ -317,7 +317,7 @@ class SDFField(Field):
 
         camera_indices = ray_samples.camera_indices.squeeze()
 
-        inputs = ray_samples.frustums.get_positions()
+        inputs = ray_samples.frustums.get_start_positions()
         inputs = inputs.view(-1, 3)
 
         directions = ray_samples.frustums.directions
