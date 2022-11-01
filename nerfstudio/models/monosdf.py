@@ -21,7 +21,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Type
 
-import numpy as np
 import torch
 from torch.nn import Parameter
 from torchmetrics import PeakSignalNoiseRatio
@@ -30,16 +29,10 @@ from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from typing_extensions import Literal
 
 from nerfstudio.cameras.rays import RayBundle
-from nerfstudio.engine.callbacks import (
-    TrainingCallback,
-    TrainingCallbackAttributes,
-    TrainingCallbackLocation,
-)
 from nerfstudio.field_components.field_heads import FieldHeadNames
 from nerfstudio.field_components.spatial_distortions import SceneContraction
 from nerfstudio.fields.sdf_field import SDFField
 
-from nerfstudio.model_components.losses import L1Loss, MSELoss
 from nerfstudio.model_components.ray_samplers import ErrorBoundedSampler
 from nerfstudio.model_components.renderers import (
     AccumulationRenderer,
@@ -51,7 +44,13 @@ from nerfstudio.model_components.scene_colliders import NearFarCollider
 from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.utils import colormaps
 from nerfstudio.utils.colors import get_color
-from nerfstudio.model_components.losses import monosdf_normal_loss, ScaleAndShiftInvariantLoss, compute_scale_and_shift
+from nerfstudio.model_components.losses import (
+    L1Loss,
+    MSELoss,
+    monosdf_normal_loss,
+    ScaleAndShiftInvariantLoss,
+    compute_scale_and_shift,
+)
 
 
 @dataclass
@@ -175,7 +174,7 @@ class MonoSDFModel(Model):
             grad_theta = outputs["eik_grad"]
             loss_dict["eikonal_loss"] = ((grad_theta.norm(2, dim=1) - 1) ** 2).mean() * self.config.eikonal_loss_mult
 
-            # normal loss
+            # monocular normal loss
             if "normal" in batch:
                 normal_gt = batch["normal"].to(self.device)
                 normal_pred = outputs["normal"]
@@ -183,6 +182,7 @@ class MonoSDFModel(Model):
                     monosdf_normal_loss(normal_pred, normal_gt) * self.config.mono_normal_loss_mult
                 )
 
+            # monocular depth loss
             if "depth" in batch:
                 # TODO check it's true that's we sample from only a single image
                 # TODO only supervised pixel that hit the surface and remove hard-coded scaling for depth
