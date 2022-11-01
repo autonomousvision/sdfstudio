@@ -31,7 +31,7 @@ from typing_extensions import Literal
 from nerfstudio.cameras.rays import RayBundle
 from nerfstudio.field_components.field_heads import FieldHeadNames
 from nerfstudio.field_components.spatial_distortions import SceneContraction
-from nerfstudio.fields.sdf_field import SDFField
+from nerfstudio.fields.sdf_field import SDFFieldConfig
 
 from nerfstudio.model_components.ray_samplers import ErrorBoundedSampler
 from nerfstudio.model_components.renderers import (
@@ -74,6 +74,8 @@ class MonoSDFModelConfig(ModelConfig):
     """Monocular normal consistency loss multiplier."""
     mono_depth_loss_mult: float = 0.1
     """Monocular depth consistency loss multiplier."""
+    sdf_field: SDFFieldConfig = SDFFieldConfig()
+    """Config for SDF Field"""
 
 
 class MonoSDFModel(Model):
@@ -92,8 +94,8 @@ class MonoSDFModel(Model):
         scene_contraction = SceneContraction(order=float("inf"))
 
         # Fields
-        self.field = SDFField(
-            self.scene_box.aabb,
+        self.field = self.config.sdf_field.setup(
+            aabb=self.scene_box.aabb,
             spatial_distortion=scene_contraction,
             num_images=self.num_train_data,
             use_average_appearance_embedding=self.config.use_average_appearance_embedding,

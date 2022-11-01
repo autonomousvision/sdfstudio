@@ -18,7 +18,8 @@ Field for compound nerf model, adds scene contraction and image embeddings to in
 
 
 from turtle import position
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Type
+from dataclasses import dataclass, field
 
 import numpy as np
 import torch
@@ -37,7 +38,7 @@ from nerfstudio.field_components.spatial_distortions import (
     SceneContraction,
     SpatialDistortion,
 )
-from nerfstudio.fields.base_field import Field
+from nerfstudio.fields.base_field import Field, FieldConfig
 
 try:
     import tinycudann as tcnn
@@ -71,6 +72,39 @@ class LaplaceDensity(nn.Module):  # alpha * Laplace(loc=0, scale=beta).cdf(-sdf)
         return beta
 
 
+@dataclass
+class SDFFieldConfig(FieldConfig):
+    """Nerfacto Model Config"""
+
+    _target: Type = field(default_factory=lambda: SDFField)
+    num_layers: int = 8
+    """Number of layers for geometric network"""
+    hidden_dim: int = 256
+    """Number of hidden dimension of geometric network"""
+    geo_feat_dim: int = 256
+    """Dimension of geometric feature"""
+    num_layers_color: int = 4
+    """Number of layers for color network"""
+    hidden_dim_color: int = 256
+    """Number of hidden dimension of color network"""
+    appearance_embedding_dim: int = 32
+    """Dimension of appearance embedding"""
+    bias: float = 0.8
+    """sphere size of geometric initializaion"""
+    geometric_init: bool = True
+    """Whether to use geometric initialization"""
+    inside_outside: bool = True
+    """whether to revert signed distance value, set to True for indoor scene"""
+    weight_norm: bool = True
+    """Whether to use weight norm for linear laer"""
+    use_grid_feature: bool = False
+    """Whether to use multi-resolution feature grids"""
+    divide_factor: float = 2.0
+    """Normalization factor for multi-resolution grids"""
+    beta_init: float = 0.1
+    """Init learnable beta value for transformation of sdf to density"""
+
+
 class SDFField(Field):
     """_summary_
 
@@ -78,38 +112,29 @@ class SDFField(Field):
         Field (_type_): _description_
     """
 
+    config: SDFFieldConfig
+
     def __init__(
         self,
+        config: SDFFieldConfig,
         aabb,
         num_images: int,
-        num_layers: int = 8,
-        hidden_dim: int = 256,
-        geo_feat_dim: int = 256,
-        skip_in: List = [4],
-        num_layers_color: int = 4,
-        hidden_dim_color: int = 256,
-        appearance_embedding_dim: int = 32,
-        bias: float = 0.8,
-        geometric_init: bool = True,
-        inside_outside: bool = True,
-        weight_norm: bool = True,
         use_average_appearance_embedding: bool = False,
         spatial_distortion: Optional[SpatialDistortion] = None,
-        use_grid_feature: bool = False,
-        divide_factor: float = 2.0,
     ) -> None:
         super().__init__()
+        self.config = config
 
+        # TODO do we need aabb here?
         self.aabb = Parameter(aabb, requires_grad=False)
-        self.geo_feat_dim = geo_feat_dim
 
         self.spatial_distortion = spatial_distortion
         self.num_images = num_images
-        self.appearance_embedding_dim = appearance_embedding_dim
-        self.embedding_appearance = Embedding(self.num_images, self.appearance_embedding_dim)
+
+        self.embedding_appearance = Embedding(self.num_images, self.config.appearance_embedding_dim)
         self.use_average_appearance_embedding = use_average_appearance_embedding
-        self.use_grid_feature = use_grid_feature
-        self.divide_factor = divide_factor
+        self.use_grid_feature = self.config.use_grid_feature
+        self.divide_factor = self.config.divide_factor
 
         num_levels = 16
         max_res = 2048
@@ -145,11 +170,12 @@ class SDFField(Field):
 
         # TODO move it to field components
         # MLP with geometric initialization
-        dims = [hidden_dim for _ in range(num_layers)]
+        dims = [self.config.hidden_dim for _ in range(self.config.num_layers)]
         in_dim = 3 + self.position_encoding.get_out_dim() + self.encoding.n_output_dims
-        dims = [in_dim] + dims + [1 + geo_feat_dim]
+        dims = [in_dim] + dims + [1 + self.config.geo_feat_dim]
         self.num_layers = len(dims)
-        self.skip_in = skip_in
+        # TODO check how to merge skip_in to config
+        self.skip_in = [4]
 
         for l in range(0, self.num_layers - 1):
             if l + 1 in self.skip_in:
@@ -159,14 +185,14 @@ class SDFField(Field):
 
             lin = nn.Linear(dims[l], out_dim)
 
-            if geometric_init:
+            if self.config.geometric_init:
                 if l == self.num_layers - 2:
-                    if not inside_outside:
+                    if not self.config.inside_outside:
                         torch.nn.init.normal_(lin.weight, mean=np.sqrt(np.pi) / np.sqrt(dims[l]), std=0.0001)
-                        torch.nn.init.constant_(lin.bias, -bias)
+                        torch.nn.init.constant_(lin.bias, -self.config.bias)
                     else:
                         torch.nn.init.normal_(lin.weight, mean=-np.sqrt(np.pi) / np.sqrt(dims[l]), std=0.0001)
-                        torch.nn.init.constant_(lin.bias, bias)
+                        torch.nn.init.constant_(lin.bias, self.config.bias)
                 elif l == 0:
                     torch.nn.init.constant_(lin.bias, 0.0)
                     torch.nn.init.constant_(lin.weight[:, 3:], 0.0)
@@ -179,19 +205,23 @@ class SDFField(Field):
                     torch.nn.init.constant_(lin.bias, 0.0)
                     torch.nn.init.normal_(lin.weight, 0.0, np.sqrt(2) / np.sqrt(out_dim))
 
-            if weight_norm:
+            if self.config.weight_norm:
                 lin = nn.utils.weight_norm(lin)
                 print("=======", lin.weight.shape)
             setattr(self, "glin" + str(l), lin)
 
         # TODO make this configurable
-        self.laplace_density = LaplaceDensity(init_val=0.1)
+        self.laplace_density = LaplaceDensity(init_val=self.config.beta_init)
 
         # color network
-        dims = [hidden_dim_color for _ in range(num_layers_color)]
+        dims = [self.config.hidden_dim_color for _ in range(self.config.num_layers_color)]
         # point, view_direction, normal, feature, embedding
         in_dim = (
-            3 + self.direction_encoding.get_out_dim() + 3 + self.geo_feat_dim + self.embedding_appearance.get_out_dim()
+            3
+            + self.direction_encoding.get_out_dim()
+            + 3
+            + self.config.geo_feat_dim
+            + self.embedding_appearance.get_out_dim()
         )
         dims = [in_dim] + dims + [3]
         self.num_layers_color = len(dims)
@@ -200,7 +230,7 @@ class SDFField(Field):
             out_dim = dims[l + 1]
             lin = nn.Linear(dims[l], out_dim)
 
-            if weight_norm:
+            if self.config.weight_norm:
                 lin = nn.utils.weight_norm(lin)
             print("=======", lin.weight.shape)
             setattr(self, "clin" + str(l), lin)
@@ -244,7 +274,7 @@ class SDFField(Field):
         positions = ray_samples.frustums.get_start_positions()
         positions_flat = positions.view(-1, 3)
         h = self.forward_geonetwork(positions_flat).view(*ray_samples.frustums.shape, -1)
-        sdf, _ = torch.split(h, [1, self.geo_feat_dim], dim=-1)
+        sdf, _ = torch.split(h, [1, self.config.geo_feat_dim], dim=-1)
         return sdf
 
     def gradient(self, x):
@@ -262,7 +292,7 @@ class SDFField(Field):
         positions = ray_samples.frustums.get_start_positions()
         positions_flat = positions.view(-1, 3)
         h = self.forward_geonetwork(positions_flat).view(*ray_samples.frustums.shape, -1)
-        sdf, geo_feature = torch.split(h, [1, self.geo_feat_dim], dim=-1)
+        sdf, geo_feature = torch.split(h, [1, self.config.geo_feat_dim], dim=-1)
         density = self.laplace_density(sdf)
         return density, geo_feature
 
@@ -279,11 +309,11 @@ class SDFField(Field):
         else:
             if self.use_average_appearance_embedding:
                 embedded_appearance = torch.ones(
-                    (*directions.shape[:-1], self.appearance_embedding_dim), device=directions.device
+                    (*directions.shape[:-1], self.config.appearance_embedding_dim), device=directions.device
                 ) * self.embedding_appearance.mean(dim=0)
             else:
                 embedded_appearance = torch.zeros(
-                    (*directions.shape[:-1], self.appearance_embedding_dim), device=directions.device
+                    (*directions.shape[:-1], self.config.appearance_embedding_dim), device=directions.device
                 )
 
         h = torch.cat(
@@ -291,8 +321,8 @@ class SDFField(Field):
                 points,
                 d,
                 normals,
-                geo_features.view(-1, self.geo_feat_dim),
-                embedded_appearance.view(-1, self.appearance_embedding_dim),
+                geo_features.view(-1, self.config.geo_feat_dim),
+                embedded_appearance.view(-1, self.config.appearance_embedding_dim),
             ],
             dim=-1,
         )
@@ -326,7 +356,7 @@ class SDFField(Field):
         inputs.requires_grad_(True)
         with torch.enable_grad():
             h = self.forward_geonetwork(inputs)
-            sdf, geo_feature = torch.split(h, [1, self.geo_feat_dim], dim=-1)
+            sdf, geo_feature = torch.split(h, [1, self.config.geo_feat_dim], dim=-1)
         d_output = torch.ones_like(sdf, requires_grad=False, device=sdf.device)
         gradients = torch.autograd.grad(
             outputs=sdf, inputs=inputs, grad_outputs=d_output, create_graph=True, retain_graph=True, only_inputs=True

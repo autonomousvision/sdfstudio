@@ -17,14 +17,24 @@ Base class for the graphs.
 """
 
 from abc import abstractmethod
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Type
+from dataclasses import dataclass, field
 
 import torch
 from torch import nn
 from torchtyping import TensorType
 
+from nerfstudio.configs.base_config import InstantiateConfig
 from nerfstudio.cameras.rays import Frustums, RaySamples
 from nerfstudio.field_components.field_heads import FieldHeadNames
+
+# Field related configs
+@dataclass
+class FieldConfig(InstantiateConfig):
+    """Configuration for model instantiation"""
+
+    _target: Type = field(default_factory=lambda: Field)
+    """target class to instantiate"""
 
 
 class Field(nn.Module):
