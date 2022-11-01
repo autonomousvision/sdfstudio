@@ -91,7 +91,7 @@ class SDFField(Field):
         appearance_embedding_dim: int = 32,
         bias: float = 0.5,
         geometric_init: bool = True,
-        inside_outside: bool = False,
+        inside_outside: bool = True,
         weight_norm: bool = True,
         use_average_appearance_embedding: bool = False,
         spatial_distortion: Optional[SpatialDistortion] = None,

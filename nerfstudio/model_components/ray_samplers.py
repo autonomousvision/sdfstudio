@@ -686,21 +686,13 @@ class ErrorBoundedSampler(Sampler):
         
         points = sampled_points[idx]
 
-        #save_points("p1.ply", ray_samples.frustums.get_positions().view(-1, 3).cpu().numpy())
-
-        # TODO Add extra samples
+        # Add extra samples uniformly
         ray_samples_uniform = self.uniform_sampler(ray_bundle, num_samples=self.num_samples_extra)
 
         ray_samples, _ = self.merge_ray_samples(ray_bundle, ray_samples, ray_samples_uniform)
 
         #TODO add extra points uniformly within the bbox for eikonal loss
 
-        # save ray samples for visualization
-        #if total_iters >= 2:
-        #print(ray_samples.shape, beta0)
-        
-        #save_points("p2.ply", ray_samples.frustums.get_positions().view(-1, 3).cpu().numpy())
-        #exit(-1)
         
         assert ray_samples is not None
         return ray_samples, points

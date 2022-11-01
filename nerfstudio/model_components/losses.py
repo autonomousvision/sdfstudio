@@ -170,3 +170,17 @@ def nerfstudio_distortion_loss(
     loss = loss + 1 / 3.0 * torch.sum(weights**2 * (ends - starts), dim=-2)
 
     return loss
+
+
+def monosdf_normal_loss(normal_pred: torch.Tensor, normal_gt: torch.Tensor):
+    """normal consistency loss as monosdf
+
+    Args:
+        normal_pred (torch.Tensor): volume rendered normal
+        normal_gt (torch.Tensor): monocular normal
+    """
+    normal_gt = torch.nn.functional.normalize(normal_gt, p=2, dim=-1)
+    normal_pred = torch.nn.functional.normalize(normal_pred, p=2, dim=-1)
+    l1 = torch.abs(normal_pred - normal_gt).sum(dim=-1).mean()
+    cos = (1.0 - torch.sum(normal_pred * normal_gt, dim=-1)).mean()
+    return l1 + cos

@@ -62,6 +62,22 @@ def load_K_Rt_from_P(filename, P=None):
     return intrinsics, pose
 
 
+def get_depths_and_normals(image_idx: int, depths, normals):
+    """function to process additional depths and normal information
+
+    Args:
+        image_idx: specific image index to work with
+        semantics: semantics data
+    """
+
+    # depth
+    depth = depths[image_idx]
+    # normal
+    normal = normals[image_idx]
+
+    return {"depth": depth, "normal": normal}
+
+
 @dataclass
 class UniSceneDataParserConfig(DataParserConfig):
     """Scene dataset parser config"""
@@ -98,9 +114,9 @@ class UniScene(DataParser):
             return data_paths
 
         image_paths = glob_data(str(self.config.data / "*_rgb.png"))
-        # TODO load depths and normals
-        # depth_paths = glob_data(self.config.data / "*_depth.npy")
-        # normal_paths = glob_data(self.config.data / "*_normal.npy")
+
+        depth_paths = glob_data(str(self.config.data / "*_depth.npy"))
+        normal_paths = glob_data(str(self.config.data / "*_normal.npy"))
 
         n_images = len(image_paths)
 
@@ -173,6 +189,38 @@ class UniScene(DataParser):
         cy = torch.stack(cy)
         camera_to_worlds = torch.stack(camera_to_worlds)
 
+        # load monocular depths and normals
+        depth_images, normal_images = [], []
+        for idx, (dpath, npath) in enumerate(zip(depth_paths, normal_paths)):
+            depth = np.load(dpath)
+            depth_images.append(torch.from_numpy(depth).float())
+
+            normal = np.load(npath)
+
+            # important as the output of omnidata is normalized
+            normal = normal * 2.0 - 1.0
+            normal = torch.from_numpy(normal).float()
+
+            # transform normal to world coordinate system
+            rot = camera_to_worlds[idx][:3, :3].clone()
+            # composite rotation matrix to nerfstudio
+            rot[:, 1:3] *= -1
+            rot = rot[np.array([1, 0, 2]), :]
+            rot[2, :] *= -1
+
+            normal_map = normal.reshape(3, -1)
+            normal_map = torch.nn.functional.normalize(normal_map, p=2, dim=0)
+            # because y and z is flipped
+            normal_map[1:3, :] *= -1
+
+            normal_map = rot @ normal_map
+            normal_map = normal_map.permute(1, 0).reshape(*normal.shape[1:], 3)
+            normal_images.append(normal_map)
+
+        # stack
+        depth_images = torch.stack(depth_images)
+        normal_images = torch.stack(normal_images)
+
         # Convert from COLMAP's/OPENCV's camera coordinate system to nerfstudio
         camera_to_worlds[:, 0:3, 1:3] *= -1
         camera_to_worlds = camera_to_worlds[:, np.array([1, 0, 2, 3]), :]
@@ -200,5 +248,10 @@ class UniScene(DataParser):
             image_filenames=image_filenames,
             cameras=cameras,
             scene_box=scene_box,
+            additional_inputs={
+                "cues": {"func": get_depths_and_normals, "kwargs": {"depths": depth_images, "normals": normal_images}}
+            },
+            depths=depth_images,
+            normals=normal_images,
         )
         return dataparser_outputs

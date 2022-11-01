@@ -51,6 +51,7 @@ from nerfstudio.model_components.scene_colliders import NearFarCollider
 from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.utils import colormaps
 from nerfstudio.utils.colors import get_color
+from nerfstudio.model_components.losses import monosdf_normal_loss
 
 
 @dataclass
@@ -166,6 +167,12 @@ class MonoSDFModel(Model):
             grad_theta = outputs["eik_grad"]
             loss_dict["eikonal_loss"] = ((grad_theta.norm(2, dim=1) - 1) ** 2).mean() * 0.1
 
+            # normal loss
+            if "normal" in batch:
+                normal_gt = batch["normal"].to(self.device)
+                normal_pred = outputs["normal"]
+                loss_dict["normal_loss"] = monosdf_normal_loss(normal_pred, normal_gt) * 0.05
+
         return loss_dict
 
     def get_image_metrics_and_images(
@@ -187,7 +194,11 @@ class MonoSDFModel(Model):
         combined_rgb = torch.cat([image, rgb], dim=1)
         combined_acc = torch.cat([acc], dim=1)
         combined_depth = torch.cat([depth], dim=1)
-        combined_normal = torch.cat([normal], dim=1)
+        if "normal" in batch:
+            normal_gt = (batch["normal"].to(self.device) + 1.0) / 2.0
+            combined_normal = torch.cat([normal, normal_gt], dim=1)
+        else:
+            combined_normal = torch.cat([normal], dim=1)
 
         # Switch images from [H, W, C] to [1, C, H, W] for metrics computations
         image = torch.moveaxis(image, -1, 0)[None, ...]
