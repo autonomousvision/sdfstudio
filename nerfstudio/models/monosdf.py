@@ -69,13 +69,19 @@ class MonoSDFModelConfig(ModelConfig):
     """Whether to use average appearance embedding or zeros for inference."""
     use_single_jitter: bool = True
     """Whether use single jitter or not for the proposal networks."""
+    eikonal_loss_mult: float = 0.1
+    """Monocular normal consistency loss multiplier."""
+    mono_normal_loss_mult: float = 0.05
+    """Monocular normal consistency loss multiplier."""
+    mono_depth_loss_mult: float = 0.1
+    """Monocular depth consistency loss multiplier."""
 
 
 class MonoSDFModel(Model):
-    """Nerfacto model
+    """MonoSDF model
 
     Args:
-        config: Nerfacto configuration to instantiate model
+        config: MonoSDF configuration to instantiate model
     """
 
     config: MonoSDFModelConfig
@@ -154,8 +160,6 @@ class MonoSDFModel(Model):
         image = batch["image"].to(self.device)
         metrics_dict["psnr"] = self.psnr(outputs["rgb"], image)
         if self.training:
-            # eikonal loss
-
             # training statics
             metrics_dict["beta"] = self.field.laplace_density.get_beta().item()
             metrics_dict["alpha"] = 1.0 / self.field.laplace_density.get_beta().item()
@@ -169,13 +173,15 @@ class MonoSDFModel(Model):
         if self.training:
             # eikonal loss
             grad_theta = outputs["eik_grad"]
-            loss_dict["eikonal_loss"] = ((grad_theta.norm(2, dim=1) - 1) ** 2).mean() * 0.1
+            loss_dict["eikonal_loss"] = ((grad_theta.norm(2, dim=1) - 1) ** 2).mean() * self.config.eikonal_loss_mult
 
             # normal loss
             if "normal" in batch:
                 normal_gt = batch["normal"].to(self.device)
                 normal_pred = outputs["normal"]
-                loss_dict["normal_loss"] = monosdf_normal_loss(normal_pred, normal_gt) * 0.0
+                loss_dict["normal_loss"] = (
+                    monosdf_normal_loss(normal_pred, normal_gt) * self.config.mono_normal_loss_mult
+                )
 
             if "depth" in batch:
                 # TODO check it's true that's we sample from only a single image
@@ -185,7 +191,8 @@ class MonoSDFModel(Model):
 
                 mask = torch.ones_like(depth_gt).reshape(1, 32, 32).bool()
                 loss_dict["depth_loss"] = (
-                    self.depth_loss(depth_pred.reshape(1, 32, 32), (depth_gt * 50 + 0.5).reshape(1, 32, 32), mask) * 0.1
+                    self.depth_loss(depth_pred.reshape(1, 32, 32), (depth_gt * 50 + 0.5).reshape(1, 32, 32), mask)
+                    * self.config.mono_depth_loss_mult
                 )
 
         return loss_dict
