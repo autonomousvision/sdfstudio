@@ -17,8 +17,7 @@ Field for compound nerf model, adds scene contraction and image embeddings to in
 """
 
 
-from turtle import position
-from typing import Dict, List, Optional, Tuple, Union, Type
+from typing import Optional, Union, Type
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -28,16 +27,10 @@ from torch.nn.parameter import Parameter
 from torchtyping import TensorType
 
 from nerfstudio.cameras.rays import RaySamples
-from nerfstudio.data.scene_box import SceneBox
-from nerfstudio.field_components.activations import trunc_exp
 from nerfstudio.field_components.embedding import Embedding
 from nerfstudio.field_components.encodings import NeRFEncoding
-from nerfstudio.field_components.field_heads import FieldHeadNames, RGBFieldHead, FieldComponent
-from nerfstudio.field_components.mlp import MLP
-from nerfstudio.field_components.spatial_distortions import (
-    SceneContraction,
-    SpatialDistortion,
-)
+from nerfstudio.field_components.field_heads import FieldHeadNames
+from nerfstudio.field_components.spatial_distortions import SpatialDistortion
 from nerfstudio.fields.base_field import Field, FieldConfig
 
 try:
