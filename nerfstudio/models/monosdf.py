@@ -51,7 +51,7 @@ from nerfstudio.model_components.scene_colliders import NearFarCollider
 from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.utils import colormaps
 from nerfstudio.utils.colors import get_color
-from nerfstudio.model_components.losses import monosdf_normal_loss
+from nerfstudio.model_components.losses import monosdf_normal_loss, ScaleAndShiftInvariantLoss, compute_scale_and_shift
 
 
 @dataclass
@@ -113,6 +113,7 @@ class MonoSDFModel(Model):
         # losses
         self.rgb_loss = L1Loss()
         self.eikonal_loss = MSELoss()
+        self.depth_loss = ScaleAndShiftInvariantLoss(alpha=0.5, scales=1)
 
         # metrics
         self.psnr = PeakSignalNoiseRatio(data_range=1.0)
@@ -134,6 +135,9 @@ class MonoSDFModel(Model):
 
         rgb = self.renderer_rgb(rgb=field_outputs[FieldHeadNames.RGB], weights=weights)
         depth = self.renderer_depth(weights=weights, ray_samples=ray_samples)
+        # the rendered depth is point-to-point distance and we should convert to depth
+        depth = depth / ray_bundle.directions_norm
+
         normal = self.renderer_normal(semantics=field_outputs[FieldHeadNames.NORMAL], weights=weights)
         accumulation = self.renderer_accumulation(weights=weights)
 
@@ -171,7 +175,18 @@ class MonoSDFModel(Model):
             if "normal" in batch:
                 normal_gt = batch["normal"].to(self.device)
                 normal_pred = outputs["normal"]
-                loss_dict["normal_loss"] = monosdf_normal_loss(normal_pred, normal_gt) * 0.05
+                loss_dict["normal_loss"] = monosdf_normal_loss(normal_pred, normal_gt) * 0.0
+
+            if "depth" in batch:
+                # TODO check it's true that's we sample from only a single image
+                # TODO only supervised pixel that hit the surface and remove hard-coded scaling for depth
+                depth_gt = batch["depth"].to(self.device)[..., None]
+                depth_pred = outputs["depth"]
+
+                mask = torch.ones_like(depth_gt).reshape(1, 32, 32).bool()
+                loss_dict["depth_loss"] = (
+                    self.depth_loss(depth_pred.reshape(1, 32, 32), (depth_gt * 50 + 0.5).reshape(1, 32, 32), mask) * 0.1
+                )
 
         return loss_dict
 
@@ -182,10 +197,7 @@ class MonoSDFModel(Model):
         image = batch["image"].to(self.device)
         rgb = outputs["rgb"]
         acc = colormaps.apply_colormap(outputs["accumulation"])
-        depth = colormaps.apply_depth_colormap(
-            outputs["depth"],
-            accumulation=outputs["accumulation"],
-        )
+
         normal = outputs["normal"]
         # don't need to normalize here
         # normal = torch.nn.functional.normalize(normal, p=2, dim=-1)
@@ -193,7 +205,25 @@ class MonoSDFModel(Model):
 
         combined_rgb = torch.cat([image, rgb], dim=1)
         combined_acc = torch.cat([acc], dim=1)
-        combined_depth = torch.cat([depth], dim=1)
+        if "depth" in batch:
+            depth_gt = batch["depth"].to(self.device)
+            depth_pred = outputs["depth"]
+
+            # align to predicted depth and normalize
+            scale, shift = compute_scale_and_shift(
+                depth_pred[None, ..., 0], depth_gt[None, ...], depth_gt[None, ...] > 0.0
+            )
+            depth_pred = depth_pred * scale + shift
+
+            combined_depth = torch.cat([depth_pred, depth_gt[..., None]], dim=1)
+            combined_depth = colormaps.apply_depth_colormap(combined_depth)
+        else:
+            depth = colormaps.apply_depth_colormap(
+                outputs["depth"],
+                accumulation=outputs["accumulation"],
+            )
+            combined_depth = torch.cat([depth], dim=1)
+
         if "normal" in batch:
             normal_gt = (batch["normal"].to(self.device) + 1.0) / 2.0
             combined_normal = torch.cat([normal, normal_gt], dim=1)

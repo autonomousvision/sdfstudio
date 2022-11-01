@@ -89,7 +89,7 @@ class SDFField(Field):
         num_layers_color: int = 4,
         hidden_dim_color: int = 256,
         appearance_embedding_dim: int = 32,
-        bias: float = 0.5,
+        bias: float = 0.8,
         geometric_init: bool = True,
         inside_outside: bool = True,
         weight_norm: bool = True,

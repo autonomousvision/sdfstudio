@@ -323,6 +323,9 @@ class Cameras:
             directions_stack[..., None, :] * rotation, dim=-1
         )  # (..., 1, 3) * (..., 3, 3) -> (..., 3)
 
+        directions_norm = torch.norm(directions_stack, dim=-1, keepdim=True)
+        directions_norm = directions_norm[0]
+
         directions_stack = normalize(directions_stack, dim=-1)
 
         origins = c2w[..., :3, 3]  # (..., 3)
@@ -340,6 +343,7 @@ class Cameras:
         return RayBundle(
             origins=origins,
             directions=directions,
+            directions_norm=directions_norm,
             pixel_area=pixel_area,
             camera_indices=ray_bundle_camera_indices,
         )
