@@ -39,6 +39,8 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from nerfstudio.configs import base_config as cfg
 from nerfstudio.data.datamanagers import (
     DataManager,
+    FlexibleDataManager,
+    FlexibleDataManagerConfig,
     VanillaDataManager,
     VanillaDataManagerConfig,
 )
@@ -373,3 +375,45 @@ class VanillaPipeline(Pipeline):
         model_params = self.model.get_param_groups()
         # TODO(ethan): assert that key names don't overlap
         return {**datamanager_params, **model_params}
+
+
+@dataclass
+class FlexibleInputPipelineConfig(cfg.InstantiateConfig):
+    """Configuration for pipeline instantiation"""
+
+    _target: Type = field(default_factory=lambda: FlexibleInputPipeline)
+    """target class to instantiate"""
+    datamanager: FlexibleDataManager = FlexibleDataManagerConfig()
+    """specifies the datamanager config"""
+    model: ModelConfig = ModelConfig()
+    """specifies the model config"""
+
+
+class FlexibleInputPipeline(VanillaPipeline):
+    @profiler.time_function
+    def get_train_loss_dict(self, step: int):
+        """This function gets your training loss dict. This will be responsible for
+        getting the next batch of data from the DataManager and interfacing with the
+        Model class, feeding the data to the model's forward function.
+
+        Args:
+            step: current iteration step to update sampler if using DDP (distributed)
+        """
+        ray_bundle, batch, additional_input = self.datamanager.next_train(step)
+        # TODO: add additional_input to model forward params and model get_metrics_dict
+        model_outputs = self.model(ray_bundle)
+        metrics_dict = self.model.get_metrics_dict(model_outputs, batch)
+
+        camera_opt_param_group = self.config.datamanager.camera_optimizer.param_group
+        if camera_opt_param_group in self.datamanager.get_param_groups():
+            # Report the camera optimization metrics
+            metrics_dict["camera_opt_translation"] = (
+                self.datamanager.get_param_groups()[camera_opt_param_group][0].data[:, :3].norm()
+            )
+            metrics_dict["camera_opt_rotation"] = (
+                self.datamanager.get_param_groups()[camera_opt_param_group][0].data[:, 3:].norm()
+            )
+
+        loss_dict = self.model.get_loss_dict(model_outputs, batch, metrics_dict)
+
+        return model_outputs, loss_dict, metrics_dict

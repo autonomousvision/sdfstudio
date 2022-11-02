@@ -39,6 +39,32 @@
       ]
     },
     {
+      "name": "Python: train mv-volsdf",
+      "type": "python",
+      "request": "launch",
+      "program": "scripts/train.py",
+      "console": "integratedTerminal",
+      "args": [
+        "mv-monosdf",
+        // "--viewer.no-enable",
+        // "--logging.event-writer=wandb",
+        "--vis", "wandb",
+        "--pipeline.datamanager.train-num-images-to-sample-from", "1",
+        "--pipeline.datamanager.camera-optimizer.mode", "off",
+        "--pipeline.model.near-plane", "1.0",
+        "--pipeline.model.far-plane", "6",
+        "--pipeline.model.background-color", "black",
+        "--pipeline.model.sdf-field.inside-outside", "False",
+        "--pipeline.model.mono-depth-loss-mult", "0.0",
+        "--pipeline.model.mono-normal-loss-mult", "0.0",
+        "uniscene-data",
+        "--data", "data/DTU/scan24",
+        // "--data", "data/DTU/scan114"
+        "--center_crop_type", "center_crop_for_dtu",
+        "--neighbors_num", "10"
+      ]
+    },
+    {
       "name": "Python: train ngp",
       "type": "python",
       "request": "launch",
