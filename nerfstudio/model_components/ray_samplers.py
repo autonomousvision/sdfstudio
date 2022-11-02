@@ -17,7 +17,7 @@ Collection of sampling strategies
 """
 
 from abc import abstractmethod
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple, Union
 
 import nerfacc
 import torch
@@ -614,7 +614,8 @@ class ErrorBoundedSampler(Sampler):
         ray_bundle: Optional[RayBundle] = None,
         density_fn: Optional[Callable] = None,
         sdf_fn: Optional[Callable] = None,
-    ) -> Tuple[RaySamples, List, List]:
+        return_eikonal_points: bool = True,
+    ) -> Union[Tuple[RaySamples, torch.Tensor], RaySamples]:
         assert ray_bundle is not None
         assert density_fn is not None
         assert sdf_fn is not None
@@ -681,25 +682,21 @@ class ErrorBoundedSampler(Sampler):
                 # Sample the final sample set to be used in the volume rendering integral
                 ray_samples = self.pdf_sampler(ray_bundle, ray_samples, weights, num_samples=self.num_samples)
         
-        # if return eikonal_points:
-        # pass
-        #TODO sample points uniformly in other place
-        # sample some of the near surface points for eikonal loss
-        sampled_points = ray_samples.frustums.get_positions().view(-1, 3)
-        idx = torch.randint(sampled_points.shape[0], (ray_samples.shape[0] * 10,)).to(sampled_points.device)
-        
-        points = sampled_points[idx]
+        if return_eikonal_points:
+            # sample some of the near surface points for eikonal loss
+            sampled_points = ray_samples.frustums.get_positions().view(-1, 3)
+            idx = torch.randint(sampled_points.shape[0], (ray_samples.shape[0] * 10,)).to(sampled_points.device)
+            points = sampled_points[idx]
 
         # Add extra samples uniformly
-        ray_samples_uniform = self.uniform_sampler(ray_bundle, num_samples=self.num_samples_extra)
-
-        ray_samples, _ = self.merge_ray_samples(ray_bundle, ray_samples, ray_samples_uniform)
-
-        #TODO add extra points uniformly within the bbox for eikonal loss
-
+        if self.num_samples_extra > 0:
+            ray_samples_uniform = self.uniform_sampler(ray_bundle, num_samples=self.num_samples_extra)
+            ray_samples, _ = self.merge_ray_samples(ray_bundle, ray_samples, ray_samples_uniform)
         
-        assert ray_samples is not None
-        return ray_samples, points
+        if return_eikonal_points:
+            return ray_samples, points
+        
+        return ray_samples
 
     def get_dstar(self, sdf, ray_samples: RaySamples):
         """Calculating the bound d* (Theorem 1) from VolSDF"""
