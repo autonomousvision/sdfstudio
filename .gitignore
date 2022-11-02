@@ -184,3 +184,5 @@ cache/
 renders/
 package-lock.json
 camera_paths/
+._.DS_Store
+.DS_Store
