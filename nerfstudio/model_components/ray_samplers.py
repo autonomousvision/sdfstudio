@@ -26,7 +26,6 @@ from torch import nn
 from torchtyping import TensorType
 
 from nerfstudio.cameras.rays import Frustums, RayBundle, RaySamples
-from nerfstudio.model_components.losses import ray_samples_to_sdist
 
 
 class Sampler(nn.Module):
@@ -578,7 +577,6 @@ class ProposalNetworkSampler(Sampler):
         return ray_samples, weights_list, ray_samples_list
 
 
-# TODO make this configurable
 class ErrorBoundedSampler(Sampler):
     """VolSDF's error bounded sampler that uses a sdf network to generate samples."""
 
@@ -605,7 +603,11 @@ class ErrorBoundedSampler(Sampler):
 
         # samplers
         self.uniform_sampler = UniformSampler(single_jitter=single_jitter)
-        self.pdf_sampler = PDFSampler(include_original=False, single_jitter=single_jitter, histogram_padding=1e-5)
+        self.pdf_sampler = PDFSampler(
+            include_original=False, 
+            single_jitter=single_jitter, 
+            histogram_padding=1e-5,
+        )
 
     def generate_ray_samples(
         self,
@@ -679,6 +681,8 @@ class ErrorBoundedSampler(Sampler):
                 # Sample the final sample set to be used in the volume rendering integral
                 ray_samples = self.pdf_sampler(ray_bundle, ray_samples, weights, num_samples=self.num_samples)
         
+        # if return eikonal_points:
+        # pass
         #TODO sample points uniformly in other place
         # sample some of the near surface points for eikonal loss
         sampled_points = ray_samples.frustums.get_positions().view(-1, 3)

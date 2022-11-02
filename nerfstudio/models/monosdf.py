@@ -76,6 +76,12 @@ class MonoSDFModelConfig(ModelConfig):
     """Monocular depth consistency loss multiplier."""
     sdf_field: SDFFieldConfig = SDFFieldConfig()
     """Config for SDF Field"""
+    num_samples: int = 64
+    """Number of samples after error bounded sampling"""
+    num_samples_eval: int = 128
+    """Number of samples per iteration used in error bounded sampling"""
+    num_samples_extra: int = 32
+    """Number of uniformly sampled points for training"""
 
 
 class MonoSDFModel(Model):
@@ -101,7 +107,11 @@ class MonoSDFModel(Model):
             use_average_appearance_embedding=self.config.use_average_appearance_embedding,
         )
 
-        self.sampler = ErrorBoundedSampler()
+        self.sampler = ErrorBoundedSampler(
+            num_samples=self.config.num_samples,
+            num_samples_eval=self.config.num_samples_eval,
+            num_samples_extra=self.config.num_samples_extra,
+        )
 
         # Collider
         self.collider = NearFarCollider(near_plane=self.config.near_plane, far_plane=self.config.far_plane)
