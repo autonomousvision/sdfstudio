@@ -26,13 +26,20 @@ from torch.nn import Parameter
 from torchmetrics import PeakSignalNoiseRatio
 from torchmetrics.functional import structural_similarity_index_measure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
+from torchtyping import TensorType
 from typing_extensions import Literal
 
 from nerfstudio.cameras.rays import RayBundle
 from nerfstudio.field_components.field_heads import FieldHeadNames
 from nerfstudio.field_components.spatial_distortions import SceneContraction
 from nerfstudio.fields.sdf_field import SDFFieldConfig
-
+from nerfstudio.model_components.losses import (
+    L1Loss,
+    MSELoss,
+    ScaleAndShiftInvariantLoss,
+    compute_scale_and_shift,
+    monosdf_normal_loss,
+)
 from nerfstudio.model_components.ray_samplers import ErrorBoundedSampler
 from nerfstudio.model_components.renderers import (
     AccumulationRenderer,
@@ -44,13 +51,6 @@ from nerfstudio.model_components.scene_colliders import NearFarCollider
 from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.utils import colormaps
 from nerfstudio.utils.colors import get_color
-from nerfstudio.model_components.losses import (
-    L1Loss,
-    MSELoss,
-    monosdf_normal_loss,
-    ScaleAndShiftInvariantLoss,
-    compute_scale_and_shift,
-)
 
 
 @dataclass
@@ -148,7 +148,32 @@ class MonoSDFModel(Model):
         )
         field_outputs = self.field(ray_samples)
         weights = ray_samples.get_weights(field_outputs[FieldHeadNames.DENSITY])
-        # warping here
+
+        rgb = self.renderer_rgb(rgb=field_outputs[FieldHeadNames.RGB], weights=weights)
+        depth = self.renderer_depth(weights=weights, ray_samples=ray_samples)
+        # the rendered depth is point-to-point distance and we should convert to depth
+        depth = depth / ray_bundle.directions_norm
+
+        normal = self.renderer_normal(semantics=field_outputs[FieldHeadNames.NORMAL], weights=weights)
+        accumulation = self.renderer_accumulation(weights=weights)
+
+        outputs = {"rgb": rgb, "accumulation": accumulation, "depth": depth, "normal": normal}
+
+        if self.training:
+            grad_points = self.field.gradient(eik_points)
+            outputs.update({"eik_grad": grad_points})
+
+        return outputs
+
+    def get_outputs_flexible(self, ray_bundle: RayBundle, additional_input: Dict[str, TensorType]):
+        if self.collider is not None:
+            ray_bundle = self.collider(ray_bundle)
+        ray_samples, eik_points = self.sampler(
+            ray_bundle, density_fn=self.field.laplace_density, sdf_fn=self.field.get_sdf
+        )
+        field_outputs = self.field(ray_samples)
+        weights = ray_samples.get_weights(field_outputs[FieldHeadNames.DENSITY])
+        # TODO: warping and other stuff that uses additional inputs
 
         rgb = self.renderer_rgb(rgb=field_outputs[FieldHeadNames.RGB], weights=weights)
         depth = self.renderer_depth(weights=weights, ray_samples=ray_samples)
