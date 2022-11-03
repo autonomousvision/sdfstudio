@@ -262,7 +262,7 @@ def gradient_loss(prediction, target, mask, reduction=reduction_batch_based):
     return reduction(image_loss, M)
 
 
-class MSELoss(nn.Module):
+class MiDaSMSELoss(nn.Module):
     def __init__(self, reduction="batch-based"):
         super().__init__()
 
@@ -306,7 +306,7 @@ class ScaleAndShiftInvariantLoss(nn.Module):
     def __init__(self, alpha=0.5, scales=4, reduction="batch-based"):
         super().__init__()
 
-        self.__data_loss = MSELoss(reduction=reduction)
+        self.__data_loss = MiDaSMSELoss(reduction=reduction)
         self.__regularization_loss = GradientLoss(scales=scales, reduction=reduction)
         self.__alpha = alpha
 
