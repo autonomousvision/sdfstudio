@@ -410,6 +410,9 @@ class FlexibleDataManager(VanillaDataManager):
         ray_bundle = self.train_ray_generator(ray_indices)
         additional_output = {}
         if "src_imgs" in image_batch.keys():
+            ray_indices = ray_indices.to(image_batch["src_idxs"].device)
+            assert (ray_indices[:, 0] == image_batch["image_idx"]).all()
+            additional_output["uv"] = ray_indices[:, 1:]
             additional_output["src_idxs"] = image_batch["src_idxs"][0]
             additional_output["src_imgs"] = image_batch["src_imgs"][0]
             additional_output["src_cameras"] = self.train_dataset.dataparser_outputs.cameras[image_batch["src_idxs"][0]]
