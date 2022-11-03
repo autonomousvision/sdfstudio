@@ -400,8 +400,8 @@ class FlexibleInputPipeline(VanillaPipeline):
             step: current iteration step to update sampler if using DDP (distributed)
         """
         ray_bundle, batch, additional_input = self.datamanager.next_train(step)
-        # TODO: add additional_input to model forward params and model get_metrics_dict
-        model_outputs = self.model(ray_bundle)
+        model_outputs = self.model.get_outputs_flexible(ray_bundle, additional_input)
+        # TODO: add additional_input to model get_metrics_dict or get_loss_dict?
         metrics_dict = self.model.get_metrics_dict(model_outputs, batch)
 
         camera_opt_param_group = self.config.datamanager.camera_optimizer.param_group
