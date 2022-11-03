@@ -378,12 +378,12 @@ class VanillaPipeline(Pipeline):
 
 
 @dataclass
-class FlexibleInputPipelineConfig(cfg.InstantiateConfig):
+class FlexibleInputPipelineConfig(VanillaPipelineConfig):
     """Configuration for pipeline instantiation"""
 
     _target: Type = field(default_factory=lambda: FlexibleInputPipeline)
     """target class to instantiate"""
-    datamanager: FlexibleDataManager = FlexibleDataManagerConfig()
+    datamanager: FlexibleDataManagerConfig = FlexibleDataManagerConfig()
     """specifies the datamanager config"""
     model: ModelConfig = ModelConfig()
     """specifies the model config"""

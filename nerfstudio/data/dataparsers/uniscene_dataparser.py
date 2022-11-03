@@ -124,9 +124,9 @@ class UniSceneDataParserConfig(DataParserConfig):
     Sets the bounding cube to have edge length of this size.
     The longest dimension of the Friends axis-aligned bbox will be scaled to this value.
     """
-    center_crop_type: Literal["center_crop_for_replica", "center_crop_for_tnt", "center_crop_for_dtu", "no_crop"] = (
-        ("center_crop_for_dtu"),
-    )
+    center_crop_type: Literal[
+        "center_crop_for_replica", "center_crop_for_tnt", "center_crop_for_dtu", "no_crop"
+    ] = "center_crop_for_dtu"
     """center crop type as monosdf, we should create a dataset that don't need this"""
     neighbors_num: Optional[int] = None
 

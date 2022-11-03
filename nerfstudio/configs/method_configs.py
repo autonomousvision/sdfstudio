@@ -55,6 +55,7 @@ descriptions = {
     "semantic-nerfw": "Predicts semantic segmentations and filters out transient objects.",
     "vanilla-nerf": "Original NeRF model. (slow)",
     "monosdf": "Implementation of MonoSDF.",
+    "mv-monosdf": "Implementation of Neural Warp MonoSDF.",
 }
 
 method_configs["mv-monosdf"] = Config(

@@ -388,7 +388,7 @@ class VanillaDataManager(DataManager):  # pylint: disable=abstract-method
 
 
 @dataclass
-class FlexibleDataManagerConfig(InstantiateConfig):
+class FlexibleDataManagerConfig(VanillaDataManagerConfig):
     """Configuration for data manager instantiation; DataManager is in charge of keeping the train/eval dataparsers;
     After instantiation, data manager holds both train/eval datasets and is in charge of returning unpacked
     train/eval data at each iteration
@@ -396,23 +396,6 @@ class FlexibleDataManagerConfig(InstantiateConfig):
 
     _target: Type = field(default_factory=lambda: FlexibleDataManager)
     """Target class to instantiate."""
-    dataparser: AnnotatedDataParserUnion = UniSceneDataParserConfig()
-    """Specifies the dataparser used to unpack the data."""
-    train_num_rays_per_batch: int = 1024
-    """Number of rays per batch to use per training iteration."""
-    train_num_images_to_sample_from: int = 1
-    """Number of images to sample during training iteration."""
-    eval_num_rays_per_batch: int = 1024
-    """Number of rays per batch to use per eval iteration."""
-    eval_num_images_to_sample_from: int = -1
-    """Number of images to sample during eval iteration."""
-    eval_image_indices: Optional[Tuple[int, ...]] = (0,)
-    """Specifies the image indices to use during eval; if None, uses all."""
-    camera_optimizer: CameraOptimizerConfig = CameraOptimizerConfig()
-    """Specifies the camera pose optimizer used during training. Helpful if poses are noisy, such as for data from
-    Record3D."""
-    # nw_neighbors: int = -1  # implemented in uniscene_dataparser
-    # """Number of source images that are used from the list of all pairs. When -1 or 0, neural warping is not performed."""
 
 
 class FlexibleDataManager(VanillaDataManager):
