@@ -396,6 +396,8 @@ class FlexibleDataManagerConfig(VanillaDataManagerConfig):
 
     _target: Type = field(default_factory=lambda: FlexibleDataManager)
     """Target class to instantiate."""
+    train_num_images_to_sample_from: int = 1
+    """Number of images to sample during training iteration."""
 
 
 class FlexibleDataManager(VanillaDataManager):

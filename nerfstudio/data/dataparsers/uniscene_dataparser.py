@@ -18,13 +18,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from glob import glob
 from pathlib import Path
-from typing import Literal, Optional, Type
+from typing import Dict, Literal, Optional, Type
 
 import cv2
 import numpy as np
 import torch
 from PIL import Image
 from rich.console import Console
+from torchtyping import TensorType
 
 from nerfstudio.cameras.cameras import Cameras, CameraType
 from nerfstudio.data.dataparsers.base_dataparser import (
@@ -37,29 +38,29 @@ from nerfstudio.data.scene_box import SceneBox
 CONSOLE = Console()
 
 
-def get_numpy_image(image_filename: str) -> npt.NDArray[np.uint8]:
-    """Returns the image of shape (H, W, 3 or 4).
-
-    Args:
-        image_idx: The image index in the dataset.
-    """
-    # image_filename = self.dataparser_outputs.image_filenames[image_idx]
-    pil_image = Image.open(image_filename)
-    image = np.array(pil_image, dtype="uint8")  # shape is (h, w, 3 or 4)
-    assert len(image.shape) == 3
-    assert image.dtype == np.uint8
-    assert image.shape[2] in [3, 4], f"Image shape of {image.shape} is in correct."
-    return image
+def get_src_from_pairs(ref_idx, all_imgs, pairs_srcs, neighbors_num=None) -> Dict[str, TensorType]:
+    src_idx = pairs_srcs[ref_idx]  # src_idx[0] is ref img
+    # randomly sample neighbors
+    if neighbors_num and neighbors_num > -1 and neighbors_num < len(src_idx) - 1:
+        perm_idx = torch.randperm(len(src_idx) - 1) + 1
+        src_idx = torch.cat([src_idx[[0]], src_idx[perm_idx[:neighbors_num]]])
+        # perm_idx = torch.cat(torch.tensor([0]), perm_idx)
+        # src_idx = src_idx[perm_idx[:neighbors_num+1]]
+    return {"src_imgs": all_imgs[src_idx], "src_idxs": src_idx}
 
 
-# def get_image(self, image_idx: int) -> TensorType["image_height", "image_width", "num_channels"]:
 def get_image(image_filename, alpha_color=None) -> TensorType["image_height", "image_width", "num_channels"]:
     """Returns a 3 channel image.
 
     Args:
         image_idx: The image index in the dataset.
     """
-    image = torch.from_numpy(get_numpy_image(image_filename).astype("float32") / 255.0)
+    pil_image = Image.open(image_filename)
+    np_image = np.array(pil_image, dtype="uint8")  # shape is (h, w, 3 or 4)
+    assert len(np_image.shape) == 3
+    assert np_image.dtype == np.uint8
+    assert np_image.shape[2] in [3, 4], f"Image shape of {np_image.shape} is in correct."
+    image = torch.from_numpy(np_image.astype("float32") / 255.0)
     if alpha_color is not None and image.shape[-1] == 4:
         assert image.shape[-1] == 4
         image = image[:, :, :3] * image[:, :, -1:] + alpha_color * (1.0 - image[:, :, -1:])
@@ -289,22 +290,8 @@ class UniScene(DataParser):
             )
             all_imgs = torch.stack([get_image(image_filename) for image_filename in sorted(image_filenames)], axis=0)
 
-            # def func(ref_idx, get_img_func, pairs_srcs):
-            #     src_imgs = [get_img_func(src_idx) for src_idx in pairs_srcs[ref_idx]]
-            #     return {"src_imgs": torch.stack(src_imgs, axis=0)}
-            def func(ref_idx, all_imgs, pairs_srcs, neighbors_num=None):
-                src_idx = pairs_srcs[ref_idx]
-                # src_idx[0] is ref img
-                # randomly sample neighbors
-                if neighbors_num and neighbors_num > -1 and neighbors_num < len(src_idx) - 1:
-                    perm_idx = torch.randperm(len(src_idx) - 1) + 1
-                    # perm_idx = torch.cat(torch.tensor([0]), perm_idx)
-                    # src_idx = src_idx[perm_idx[:neighbors_num+1]]
-                    src_idx = torch.cat([src_idx[[0]], src_idx[perm_idx[:neighbors_num]]])
-                return {"src_imgs": all_imgs[src_idx], "src_idxs": src_idx}
-
             additional_inputs_dict["pairs"] = {
-                "func": func,
+                "func": get_src_from_pairs,
                 "kwargs": {"all_imgs": all_imgs, "pairs_srcs": pairs_srcs, "neighbors_num": self.config.neighbors_num},
             }
 
