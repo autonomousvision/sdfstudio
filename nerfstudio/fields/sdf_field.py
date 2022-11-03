@@ -360,6 +360,7 @@ class SDFField(Field):
         density = self.laplace_density(sdf)
 
         rgb = rgb.view(*ray_samples.frustums.directions.shape[:-1], -1)
+        sdf = sdf.view(*ray_samples.frustums.directions.shape[:-1], -1)
         density = density.view(*ray_samples.frustums.directions.shape[:-1], -1)
         gradients = gradients.view(*ray_samples.frustums.directions.shape[:-1], -1)
         normals = torch.nn.functional.normalize(gradients, p=2, dim=-1)

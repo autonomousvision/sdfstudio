@@ -793,6 +793,7 @@ def save_points(path_save, pts, colors = None, normals = None, BRG2RGB=False):
         assert colors.shape[1] == 3
     assert pts.shape[1] == 3
     import open3d as o3d
+    import numpy as np
     cloud = o3d.geometry.PointCloud()
     cloud.points = o3d.utility.Vector3dVector(pts)
     if colors is not None:
