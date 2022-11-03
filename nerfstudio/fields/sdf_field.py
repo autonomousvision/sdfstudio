@@ -364,7 +364,14 @@ class SDFField(Field):
         gradients = gradients.view(*ray_samples.frustums.directions.shape[:-1], -1)
         normals = torch.nn.functional.normalize(gradients, p=2, dim=-1)
 
-        outputs.update({FieldHeadNames.RGB: rgb, FieldHeadNames.DENSITY: density, FieldHeadNames.NORMAL: normals})
+        outputs.update(
+            {
+                FieldHeadNames.RGB: rgb,
+                FieldHeadNames.DENSITY: density,
+                FieldHeadNames.SDF: sdf,
+                FieldHeadNames.NORMAL: normals,
+            }
+        )
 
         return outputs
 
