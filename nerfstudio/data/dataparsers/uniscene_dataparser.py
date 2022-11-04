@@ -41,14 +41,13 @@ CONSOLE = Console()
 def get_src_from_pairs(
     ref_idx, all_imgs, pairs_srcs, neighbors_num=None, neighbors_shuffle=False
 ) -> Dict[str, TensorType]:
-    src_idx = pairs_srcs[ref_idx]  # src_idx[0] is ref img
+    # src_idx[0] is ref img
+    src_idx = pairs_srcs[ref_idx]
     # randomly sample neighbors
     if neighbors_num and neighbors_num > -1 and neighbors_num < len(src_idx) - 1:
         if neighbors_shuffle:
             perm_idx = torch.randperm(len(src_idx) - 1) + 1
             src_idx = torch.cat([src_idx[[0]], src_idx[perm_idx[:neighbors_num]]])
-            # perm_idx = torch.cat(torch.tensor([0]), perm_idx)
-            # src_idx = src_idx[perm_idx[:neighbors_num+1]]
         else:
             src_idx = src_idx[: neighbors_num + 1]
     return {"src_imgs": all_imgs[src_idx], "src_idxs": src_idx}
@@ -136,6 +135,8 @@ class UniSceneDataParserConfig(DataParserConfig):
     """center crop type as monosdf, we should create a dataset that don't need this"""
     neighbors_num: Optional[int] = None
     neighbors_shuffle: Optional[bool] = False
+    pairs_sorted_ascending: Optional[bool] = True
+    """if src image pairs are sorted in ascending order by similarity i.e. the last element is the most similar to the first (ref)"""
 
 
 @dataclass
@@ -291,9 +292,14 @@ class UniScene(DataParser):
             with open(pairs_path, "r") as f:
                 pairs = f.readlines()
             split_ext = lambda x: x.split(".")[0]
-            pairs_srcs = torch.tensor(
-                [[int(split_ext(img_name)) for img_name in sources.split(" ")] for sources in pairs]
-            )
+            pairs_srcs = []
+            for sources_line in pairs:
+                sources_array = [int(split_ext(img_name)) for img_name in sources_line.split(" ")]
+                if self.config.pairs_sorted_ascending:
+                    # invert (flip) the source elements s.t. the most similar source is in index 1 (index 0 is reference)
+                    sources_array = [sources_array[0]] + sources_array[:1:-1]
+                pairs_srcs.append(sources_array)
+            pairs_srcs = torch.tensor(pairs_srcs)
             all_imgs = torch.stack([get_image(image_filename) for image_filename in sorted(image_filenames)], axis=0)
 
             additional_inputs_dict["pairs"] = {
