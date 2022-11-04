@@ -269,13 +269,14 @@ class UniScene(DataParser):
         assert torch.all(cx[0] == cx), "Not all cameras have the same cx. Our Cameras class does not support this."
         assert torch.all(cy[0] == cy), "Not all cameras have the same cy. Our Cameras class does not support this."
 
+        height, width = depth_images.shape[1:3]
         cameras = Cameras(
             fx=fx,
             fy=fy,
             cx=float(cx[0]),
             cy=float(cy[0]),
-            height=384,
-            width=384,
+            height=height,
+            width=width,
             camera_to_worlds=camera_to_worlds[:, :3, :4],
             camera_type=CameraType.PERSPECTIVE,
         )
