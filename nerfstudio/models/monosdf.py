@@ -76,6 +76,8 @@ class MonoSDFModelConfig(ModelConfig):
     """Monocular normal consistency loss multiplier."""
     mono_depth_loss_mult: float = 0.1
     """Monocular depth consistency loss multiplier."""
+    patch_warp_loss_mult: float = 1.0
+    """Multi-view consistency warping loss multiplier."""
     sdf_field: SDFFieldConfig = SDFFieldConfig()
     """Config for SDF Field"""
     num_samples: int = 64
@@ -198,18 +200,19 @@ class MonoSDFModel(Model):
 
         outputs = {"rgb": rgb, "accumulation": accumulation, "depth": depth, "normal": normal}
 
-        # TODO visualize warped results
-        # patch warping
-        warped_patches, valid_mask = self.patch_warping(
-            ray_samples,
-            field_outputs[FieldHeadNames.SDF],
-            field_outputs[FieldHeadNames.NORMAL],
-            additional_inputs["src_cameras"],
-            additional_inputs["src_imgs"],
-            pix_indices=additional_inputs["uv"],
-        )
+        if self.config.patch_warp_loss_mult > 0:
+            # TODO visualize warped results
+            # patch warping
+            warped_patches, valid_mask = self.patch_warping(
+                ray_samples,
+                field_outputs[FieldHeadNames.SDF],
+                field_outputs[FieldHeadNames.NORMAL],
+                additional_inputs["src_cameras"],
+                additional_inputs["src_imgs"],
+                pix_indices=additional_inputs["uv"],
+            )
 
-        outputs.update({"patches": warped_patches, "patches_valid_mask": valid_mask})
+            outputs.update({"patches": warped_patches, "patches_valid_mask": valid_mask})
 
         if self.training:
             grad_points = self.field.gradient(eik_points)
@@ -262,7 +265,9 @@ class MonoSDFModel(Model):
                 patches = outputs["patches"]
                 patches_valid_mask = outputs["patches_valid_mask"]
 
-                loss_dict["patch_loss"] = self.patch_loss(patches, patches_valid_mask)
+                loss_dict["patch_loss"] = (
+                    self.patch_loss(patches, patches_valid_mask) * self.config.patch_warp_loss_mult
+                )
 
         return loss_dict
 

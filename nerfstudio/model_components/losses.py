@@ -404,6 +404,6 @@ class MultiViewLoss(nn.Module):
         ssim = torch.mean(ssim, dim=(1, 2, 3))
         ssim = ssim.reshape(num_imgs - 1, num_rays)
 
-        min_ssim = torch.topk(ssim, k=self.topk, largest=False)[0]
+        min_ssim = torch.topk(ssim, k=self.topk, largest=False, dim=0)[0]
 
         return torch.mean(min_ssim)
