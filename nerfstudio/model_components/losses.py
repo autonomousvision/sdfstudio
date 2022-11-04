@@ -330,3 +330,80 @@ class ScaleAndShiftInvariantLoss(nn.Module):
 
 
 # end copy
+
+
+# copy from https://github.com/svip-lab/Indoor-SfMLearner/blob/0d682b7ce292484e5e3e2161fc9fc07e2f5ca8d1/layers.py#L218
+class SSIM(nn.Module):
+    """Layer to compute the SSIM loss between a pair of images"""
+
+    def __init__(self, patch_size):
+        super(SSIM, self).__init__()
+        self.mu_x_pool = nn.AvgPool2d(patch_size, 1)
+        self.mu_y_pool = nn.AvgPool2d(patch_size, 1)
+        self.sig_x_pool = nn.AvgPool2d(patch_size, 1)
+        self.sig_y_pool = nn.AvgPool2d(patch_size, 1)
+        self.sig_xy_pool = nn.AvgPool2d(patch_size, 1)
+
+        self.refl = nn.ReflectionPad2d(patch_size // 2)
+
+        self.C1 = 0.01**2
+        self.C2 = 0.03**2
+
+    def forward(self, x, y):
+        x = self.refl(x)
+        y = self.refl(y)
+
+        mu_x = self.mu_x_pool(x)
+        mu_y = self.mu_y_pool(y)
+
+        sigma_x = self.sig_x_pool(x**2) - mu_x**2
+        sigma_y = self.sig_y_pool(y**2) - mu_y**2
+        sigma_xy = self.sig_xy_pool(x * y) - mu_x * mu_y
+
+        SSIM_n = (2 * mu_x * mu_y + self.C1) * (2 * sigma_xy + self.C2)
+        SSIM_d = (mu_x**2 + mu_y**2 + self.C1) * (sigma_x + sigma_y + self.C2)
+
+        return torch.clamp((1 - SSIM_n / SSIM_d) / 2, 0, 1)
+
+
+class MultiViewLoss(nn.Module):
+    """compute multi-view consistency loss"""
+
+    def __init__(self, patch_size: int = 11, topk: int = 4):
+        super(MultiViewLoss, self).__init__()
+        self.patch_size = patch_size
+        self.topk = topk
+        self.ssim = SSIM(patch_size=patch_size)
+
+    def forward(self, patches: torch.Tensor, valid: torch.Tensor):
+        """take the mim
+
+        Args:
+            patches (torch.Tensor): _description_
+            valid (torch.Tensor): _description_
+
+        Returns:
+            _type_: _description_
+        """
+        num_imgs, num_rays = patches.shape[:2]
+        ref_patches = (
+            patches[:1, ...]
+            .reshape(1, num_rays, self.patch_size, self.patch_size, 3)
+            .expand(num_imgs - 1, num_rays, self.patch_size, self.patch_size, 3)
+            .reshape(-1, self.patch_size, self.patch_size, 3)
+            .permute(0, 3, 1, 2)
+        )  # [N_src*N_rays, 3, patch_size, patch_size]
+        src_patches = (
+            patches[1:, ...]
+            .reshape(num_imgs - 1, num_rays, self.patch_size, self.patch_size, 3)
+            .reshape(-1, self.patch_size, self.patch_size, 3)
+            .permute(0, 3, 1, 2)
+        )  # [N_src*N_rays, 3, patch_size, patch_size]
+
+        ssim = self.ssim(ref_patches, src_patches)
+        ssim = torch.mean(ssim, dim=(1, 2, 3))
+        ssim = ssim.reshape(num_imgs - 1, num_rays)
+
+        min_ssim = torch.topk(ssim, k=self.topk, largest=False)[0]
+
+        return torch.mean(min_ssim)

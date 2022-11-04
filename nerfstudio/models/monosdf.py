@@ -39,6 +39,7 @@ from nerfstudio.model_components.losses import (
     ScaleAndShiftInvariantLoss,
     compute_scale_and_shift,
     monosdf_normal_loss,
+    MultiViewLoss,
 )
 from nerfstudio.model_components.ray_samplers import ErrorBoundedSampler
 from nerfstudio.model_components.renderers import (
@@ -47,6 +48,7 @@ from nerfstudio.model_components.renderers import (
     RGBRenderer,
     SemanticRenderer,
 )
+from nerfstudio.model_components.patch_warping import PatchWarping
 from nerfstudio.model_components.scene_colliders import NearFarCollider
 from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.utils import colormaps
@@ -126,11 +128,14 @@ class MonoSDFModel(Model):
         self.renderer_accumulation = AccumulationRenderer()
         self.renderer_depth = DepthRenderer()
         self.renderer_normal = SemanticRenderer()
+        # patch warping
+        self.patch_warping = PatchWarping(patch_size=11)
 
         # losses
         self.rgb_loss = L1Loss()
         self.eikonal_loss = MSELoss()
         self.depth_loss = ScaleAndShiftInvariantLoss(alpha=0.5, scales=1)
+        self.patch_loss = MultiViewLoss(patch_size=11, topk=4)
 
         # metrics
         self.psnr = PeakSignalNoiseRatio(data_range=1.0)
@@ -165,7 +170,15 @@ class MonoSDFModel(Model):
 
         return outputs
 
-    def get_outputs_flexible(self, ray_bundle: RayBundle, additional_input: Dict[str, TensorType]):
+    def get_outputs_flexible(self, ray_bundle: RayBundle, additional_inputs: Dict[str, TensorType]):
+        """run the model with additional inputs such as warping or rendering from unseen rays
+        Args:
+            ray_bundle: containing all the information needed to render that ray latents included
+            additional_inputs: addtional inputs such as images, src_idx, src_cameras
+
+        Returns:
+            dict: information needed for compute gradients
+        """
         if self.collider is not None:
             ray_bundle = self.collider(ray_bundle)
         ray_samples, eik_points = self.sampler(
@@ -184,6 +197,19 @@ class MonoSDFModel(Model):
         accumulation = self.renderer_accumulation(weights=weights)
 
         outputs = {"rgb": rgb, "accumulation": accumulation, "depth": depth, "normal": normal}
+
+        # TODO visualize warped results
+        # patch warping
+        warped_patches, valid_mask = self.patch_warping(
+            ray_samples,
+            field_outputs[FieldHeadNames.SDF],
+            field_outputs[FieldHeadNames.NORMAL],
+            additional_inputs["src_cameras"],
+            additional_inputs["src_imgs"],
+            pix_indices=additional_inputs["uv"],
+        )
+
+        outputs.update({"patches": warped_patches, "patches_valid_mask": valid_mask})
 
         if self.training:
             grad_points = self.field.gradient(eik_points)
@@ -231,6 +257,12 @@ class MonoSDFModel(Model):
                     self.depth_loss(depth_pred.reshape(1, 32, 32), (depth_gt * 50 + 0.5).reshape(1, 32, 32), mask)
                     * self.config.mono_depth_loss_mult
                 )
+
+            if "patches" in outputs:
+                patches = outputs["patches"]
+                patches_valid_mask = outputs["patches_valid_mask"]
+
+                loss_dict["patch_loss"] = self.patch_loss(patches, patches_valid_mask)
 
         return loss_dict
 
