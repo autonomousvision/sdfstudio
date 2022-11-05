@@ -78,6 +78,8 @@ class MonoSDFModelConfig(ModelConfig):
     """Monocular depth consistency loss multiplier."""
     patch_warp_loss_mult: float = 1.0
     """Multi-view consistency warping loss multiplier."""
+    patch_size: int = 11
+    """Multi-view consistency warping loss patch size."""
     sdf_field: SDFFieldConfig = SDFFieldConfig()
     """Config for SDF Field"""
     num_samples: int = 64
@@ -131,13 +133,13 @@ class MonoSDFModel(Model):
         self.renderer_depth = DepthRenderer()
         self.renderer_normal = SemanticRenderer()
         # patch warping
-        self.patch_warping = PatchWarping(patch_size=11)
+        self.patch_warping = PatchWarping(patch_size=self.config.patch_size)
 
         # losses
         self.rgb_loss = L1Loss()
         self.eikonal_loss = MSELoss()
         self.depth_loss = ScaleAndShiftInvariantLoss(alpha=0.5, scales=1)
-        self.patch_loss = MultiViewLoss(patch_size=11, topk=4)
+        self.patch_loss = MultiViewLoss(patch_size=self.config.patch_size, topk=4)
 
         # metrics
         self.psnr = PeakSignalNoiseRatio(data_range=1.0)
@@ -241,7 +243,7 @@ class MonoSDFModel(Model):
             loss_dict["eikonal_loss"] = ((grad_theta.norm(2, dim=1) - 1) ** 2).mean() * self.config.eikonal_loss_mult
 
             # monocular normal loss
-            if "normal" in batch:
+            if "normal" in batch and self.config.mono_normal_loss_mult > 0.0:
                 normal_gt = batch["normal"].to(self.device)
                 normal_pred = outputs["normal"]
                 loss_dict["normal_loss"] = (
@@ -249,7 +251,7 @@ class MonoSDFModel(Model):
                 )
 
             # monocular depth loss
-            if "depth" in batch:
+            if "depth" in batch and self.config.mono_depth_loss_mult > 0.0:
                 # TODO check it's true that's we sample from only a single image
                 # TODO only supervised pixel that hit the surface and remove hard-coded scaling for depth
                 depth_gt = batch["depth"].to(self.device)[..., None]
@@ -261,7 +263,7 @@ class MonoSDFModel(Model):
                     * self.config.mono_depth_loss_mult
                 )
 
-            if "patches" in outputs:
+            if "patches" in outputs and self.config.patch_warp_loss_mult > 0.0:
                 patches = outputs["patches"]
                 patches_valid_mask = outputs["patches_valid_mask"]
 
