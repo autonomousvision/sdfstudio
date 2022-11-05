@@ -29,14 +29,16 @@ from nerfstudio.cameras.rays import RaySamples
 from nerfstudio.model_components.ray_samplers import save_points
 
 
-def get_intersection_points(ray_samples: RaySamples, sdf: torch.Tensor, normal: torch.Tensor):
+def get_intersection_points(
+    ray_samples: RaySamples, sdf: torch.Tensor, normal: torch.Tensor, in_image_mask: torch.Tensor
+):
     """compute intersection points
 
     Args:
         ray_samples (RaySamples): _description_
         sdf (torch.Tensor): _description_
         normal (torch.Tensor): _description_
-
+        in_image_mask (torch.Tensor): we only use the rays in the range of [half_patch:h-half_path, half_patch:w-half_path]
     Returns:
         _type_: _description_
     """
@@ -57,7 +59,7 @@ def get_intersection_points(ray_samples: RaySamples, sdf: torch.Tensor, normal: 
     mask_pos_to_neg = sdf[torch.arange(n_rays), indices, 0] > 0
 
     # Define mask where a valid depth value is found
-    mask = mask_sign_change & mask_pos_to_neg
+    mask = mask_sign_change & mask_pos_to_neg & in_image_mask
 
     # Get depth values and function values for the interval
     d_low = starts[torch.arange(n_rays), indices, 0][mask]
@@ -169,8 +171,17 @@ class PatchWarping(nn.Module):
 
         device = sdf.device
 
+        # filter out the patches that are outside the boarder of image
+        in_image_mask = (
+            (pix_indices[:, 0] > self.patch_size // 2)
+            & (pix_indices[:, 1] > self.patch_size // 2)
+            & (pix_indices[:, 0] < (cameras.image_height[0] - self.patch_size // 2 - 1))
+            & (pix_indices[:, 1] < (cameras.image_width[0] - self.patch_size // 2 - 1))
+        )
+        # [n_imgs, n_rays_valid, patch_h*patch_w]
+
         # find intersection points and normals
-        intersection_points, normal, mask = get_intersection_points(ray_samples, sdf, normal)
+        intersection_points, normal, mask = get_intersection_points(ray_samples, sdf, normal, in_image_mask)
 
         H = get_homography(intersection_points, normal, cameras)
 
@@ -209,23 +220,19 @@ class PatchWarping(nn.Module):
 
         rgb = rgb.permute(0, 2, 3, 1)  # [n_imgs, n_rays_valid, patch_h*patch_w, 3]
 
-        """
         # save as visualization
-        import cv2
-        vis_img_num = 10
-        vis_patch_num = 20
-        image = (
-            rgb[:vis_img_num, : vis_patch_num * vis_patch_num, :, :]
-            .reshape(vis_img_num, vis_patch_num, vis_patch_num, self.patch_size, self.patch_size, 3)
-            .permute(0, 1, 3, 2, 4, 5)
-            .reshape(-1, vis_patch_num * self.patch_size, 3)
-        )
+        if False:
+            import cv2
 
-        def save_patch(img_id, patch_id):
-            patch_rgb = rgb[img_id, patch_id].reshape(self.patch_size, self.patch_size, 3)
-            cv2.imwrite("patch.png", (patch_rgb.detach().cpu().numpy() * 255).astype(np.uint8)[..., ::-1])
+            vis_patch_num = 60
+            image = (
+                rgb[:, :vis_patch_num, :, :]
+                .reshape(-1, vis_patch_num, self.patch_size, self.patch_size, 3)
+                .permute(1, 2, 0, 3, 4)
+                .reshape(vis_patch_num * self.patch_size, -1, 3)
+            )
 
-        cv2.imwrite("vis.png", (image.detach().cpu().numpy() * 255).astype(np.uint8)[..., ::-1])
-        """
+            cv2.imwrite("vis.png", (image.detach().cpu().numpy() * 255).astype(np.uint8)[..., ::-1])
+            breakpoint()
 
         return rgb, valid
