@@ -366,6 +366,9 @@ class SSIM(nn.Module):
         return torch.clamp((1 - SSIM_n / SSIM_d) / 2, 0, 1)
 
 
+# TODO test different losses
+
+
 class MultiViewLoss(nn.Module):
     """compute multi-view consistency loss"""
 
@@ -401,13 +404,32 @@ class MultiViewLoss(nn.Module):
             .permute(0, 3, 1, 2)
         )  # [N_src*N_rays, 3, patch_size, patch_size]
 
-        ssim = self.ssim(ref_patches, src_patches)
+        # apply same reshape to the valid mask
+        src_patches_valid = (
+            valid[1:, ...]
+            .reshape(num_imgs - 1, num_rays, self.patch_size, self.patch_size, 1)
+            .reshape(-1, self.patch_size, self.patch_size, 1)
+            .permute(0, 3, 1, 2)
+        )  # [N_src*N_rays, 1, patch_size, patch_size]
+
+        ssim = self.ssim(ref_patches.detach(), src_patches)
         ssim = torch.mean(ssim, dim=(1, 2, 3))
         ssim = ssim.reshape(num_imgs - 1, num_rays)
 
+        # ignore invalid patch by setting ssim error to very large value
+        ssim_valid = (
+            src_patches_valid.reshape(-1, self.patch_size * self.patch_size).all(dim=-1).reshape(num_imgs - 1, num_rays)
+        )
+        # we should mask the error after we select the topk value, otherwise we might select far way patches that happens to be inside the image
+        # ssim[torch.logical_not(ssim_valid)] = 1.1  # max ssim_error is 1
+
         min_ssim, idx = torch.topk(ssim, k=self.topk, largest=False, dim=0, sorted=True)
 
-        if True:
+        min_ssim_valid = ssim_valid[idx, torch.arange(num_rays)[None].expand_as(idx)]
+        # TODO how to set this value for better visualization
+        min_ssim[torch.logical_not(min_ssim_valid)] = 0.0  # max ssim_error is 1
+
+        if False:
 
             # visualization of topK error computations
 
@@ -424,19 +446,34 @@ class MultiViewLoss(nn.Module):
                 .reshape(vis_patch_num * self.patch_size, -1, 3)
             )
 
-            src_patches = src_patches.reshape(num_imgs - 1, num_rays, 3, self.patch_size, self.patch_size).permute(
-                1, 0, 3, 4, 2
-            )
+            src_patches_reshaped = src_patches.reshape(
+                num_imgs - 1, num_rays, 3, self.patch_size, self.patch_size
+            ).permute(1, 0, 3, 4, 2)
             idx = idx.permute(1, 0)
 
             selected_patch = (
-                src_patches[torch.arange(num_rays)[:, None].expand(idx.shape), idx]
+                src_patches_reshaped[torch.arange(num_rays)[:, None].expand(idx.shape), idx]
                 .permute(0, 2, 1, 3, 4)
                 .reshape(num_rays, self.patch_size, self.topk * self.patch_size, 3)[:vis_patch_num]
                 .reshape(-1, self.topk * self.patch_size, 3)
             )
 
-            image = torch.cat([selected_patch, image], dim=1)
+            # apply same reshape to the valid mask
+            src_patches_valid_reshaped = src_patches_valid.reshape(
+                num_imgs - 1, num_rays, 1, self.patch_size, self.patch_size
+            ).permute(1, 0, 3, 4, 2)
+
+            selected_patch_valid = (
+                src_patches_valid_reshaped[torch.arange(num_rays)[:, None].expand(idx.shape), idx]
+                .permute(0, 2, 1, 3, 4)
+                .reshape(num_rays, self.patch_size, self.topk * self.patch_size, 1)[:vis_patch_num]
+                .reshape(-1, self.topk * self.patch_size, 1)
+            )
+            # valid to image
+            selected_patch_valid = selected_patch_valid.expand_as(selected_patch).float()
+            # breakpoint()
+
+            image = torch.cat([selected_patch_valid, selected_patch, image], dim=1)
             # select top rays with highest errors
 
             image = image.reshape(num_rays, self.patch_size, -1, 3)
@@ -446,6 +483,7 @@ class MultiViewLoss(nn.Module):
 
             cv2.imwrite(f"vis/{self.iter}.png", (image.detach().cpu().numpy() * 255).astype(np.uint8)[..., ::-1])
             self.iter += 1
-            # breakpoint()
+            if self.iter == 9:
+                breakpoint()
 
         return torch.mean(min_ssim)
