@@ -374,6 +374,7 @@ class MultiViewLoss(nn.Module):
         self.patch_size = patch_size
         self.topk = topk
         self.ssim = SSIM(patch_size=patch_size)
+        self.iter = 0
 
     def forward(self, patches: torch.Tensor, valid: torch.Tensor):
         """take the mim
@@ -404,6 +405,47 @@ class MultiViewLoss(nn.Module):
         ssim = torch.mean(ssim, dim=(1, 2, 3))
         ssim = ssim.reshape(num_imgs - 1, num_rays)
 
-        min_ssim = torch.topk(ssim, k=self.topk, largest=False, dim=0)[0]
+        min_ssim, idx = torch.topk(ssim, k=self.topk, largest=False, dim=0, sorted=True)
+
+        if True:
+
+            # visualization of topK error computations
+
+            import cv2
+            import numpy as np
+
+            vis_patch_num = num_rays
+            K = min(100, vis_patch_num)
+
+            image = (
+                patches[:, :vis_patch_num, :, :]
+                .reshape(-1, vis_patch_num, self.patch_size, self.patch_size, 3)
+                .permute(1, 2, 0, 3, 4)
+                .reshape(vis_patch_num * self.patch_size, -1, 3)
+            )
+
+            src_patches = src_patches.reshape(num_imgs - 1, num_rays, 3, self.patch_size, self.patch_size).permute(
+                1, 0, 3, 4, 2
+            )
+            idx = idx.permute(1, 0)
+
+            selected_patch = (
+                src_patches[torch.arange(num_rays)[:, None].expand(idx.shape), idx]
+                .permute(0, 2, 1, 3, 4)
+                .reshape(num_rays, self.patch_size, self.topk * self.patch_size, 3)[:vis_patch_num]
+                .reshape(-1, self.topk * self.patch_size, 3)
+            )
+
+            image = torch.cat([selected_patch, image], dim=1)
+            # select top rays with highest errors
+
+            image = image.reshape(num_rays, self.patch_size, -1, 3)
+
+            _, idx2 = torch.topk(torch.mean(min_ssim, dim=0), k=K, largest=True, dim=0, sorted=True)
+            image = image[idx2].reshape(K * self.patch_size, -1, 3)
+
+            cv2.imwrite(f"vis/{self.iter}.png", (image.detach().cpu().numpy() * 255).astype(np.uint8)[..., ::-1])
+            self.iter += 1
+            # breakpoint()
 
         return torch.mean(min_ssim)
