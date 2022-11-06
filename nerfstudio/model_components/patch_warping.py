@@ -84,7 +84,15 @@ def get_intersection_points(
     points_normal = (v_low[..., None] * n_high - v_high[..., None] * n_low) / (v_low[..., None] - v_high[..., None])
 
     points_normal = torch.nn.functional.normalize(points_normal, dim=-1, p=2)
-    return intersection_points, points_normal, mask
+
+    # filter normals that are perpendicular to view directions
+    valid = (points_normal * directions).sum(dim=-1).abs() > 0.1
+    intersection_points = intersection_points[valid]
+    points_normal = points_normal[valid]
+    new_mask = mask.clone()
+    new_mask[mask] &= valid
+
+    return intersection_points, points_normal, new_mask
 
 
 def get_homography(intersection_points: torch.Tensor, normal: torch.Tensor, cameras: Cameras):
@@ -183,6 +191,7 @@ class PatchWarping(nn.Module):
         # find intersection points and normals
         intersection_points, normal, mask = get_intersection_points(ray_samples, sdf, normal, in_image_mask)
 
+        # Attention: we construct homography with OPENCV coordinate system
         H = get_homography(intersection_points, normal, cameras)
 
         # Attention uv is (y, x) and we should change to (x, y) for homography
