@@ -367,6 +367,36 @@ class SSIM(nn.Module):
 
 
 # TODO test different losses
+class NCC(nn.Module):
+    """Layer to compute the normalization cross correlation (NCC) of patches"""
+
+    def __init__(self, patch_size: int = 11):
+        super(NCC, self).__init__()
+        self.patch_size = patch_size
+
+    def forward(self, x, y):
+        # TODO if we use gray image we should do it right after loading the image to save computations
+        # to gray image
+        x = torch.mean(x, dim=1)
+        y = torch.mean(y, dim=1)
+
+        x_mean = torch.mean(x, dim=(1, 2), keepdim=True)
+        y_mean = torch.mean(y, dim=(1, 2), keepdim=True)
+
+        x_normalized = x - x_mean
+        y_normalized = y - y_mean
+
+        norm = torch.sum(x_normalized * y_normalized, dim=(1, 2))
+        var = torch.square(x_normalized).sum(dim=(1, 2)) * torch.square(y_normalized).sum(dim=(1, 2))
+        denom = torch.sqrt(var + 1e-6)
+
+        ncc = norm / (denom + 1e-6)
+
+        # ignore pathces with low variances
+        ncc[var < 0.001] = 1.0
+
+        score = 1 - ncc.clip(-1.0, 1.0)  # 0->2: smaller, better
+        return score[:, None, None, None]
 
 
 class MultiViewLoss(nn.Module):
@@ -376,7 +406,11 @@ class MultiViewLoss(nn.Module):
         super(MultiViewLoss, self).__init__()
         self.patch_size = patch_size
         self.topk = topk
-        self.ssim = SSIM(patch_size=patch_size)
+        # TODO make metric configurable
+        # self.ssim = SSIM(patch_size=patch_size)
+        # self.ncc = NCC(patch_size=patch_size)
+        self.ssim = NCC(patch_size=patch_size)
+
         self.iter = 0
 
     def forward(self, patches: torch.Tensor, valid: torch.Tensor):
@@ -478,7 +512,14 @@ class MultiViewLoss(nn.Module):
 
             image = image.reshape(num_rays, self.patch_size, -1, 3)
 
-            _, idx2 = torch.topk(torch.mean(min_ssim, dim=0), k=K, largest=True, dim=0, sorted=True)
+            _, idx2 = torch.topk(
+                torch.sum(min_ssim, dim=0) / (min_ssim_valid.float().sum(dim=0) + 1e-6),
+                k=K,
+                largest=True,
+                dim=0,
+                sorted=True,
+            )
+
             image = image[idx2].reshape(K * self.patch_size, -1, 3)
 
             cv2.imwrite(f"vis/{self.iter}.png", (image.detach().cpu().numpy() * 255).astype(np.uint8)[..., ::-1])
@@ -486,4 +527,5 @@ class MultiViewLoss(nn.Module):
             if self.iter == 9:
                 breakpoint()
 
+        # TODO use sum / valid_sum()
         return torch.mean(min_ssim)
