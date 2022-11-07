@@ -147,7 +147,12 @@ def get_homography(intersection_points: torch.Tensor, normal: torch.Tensor, came
     H = R_rel[:, None, :, :] + t_rel[:, None, :, :] @ n_ref.transpose(1, 0)[None, :, None, :] / d[..., None, None]
 
     H = K[:, None] @ H @ K_inv[None, :1]  # [n_cameras, n_pts, 3, 3]
-    return H
+
+    # compute valid mask for homograpy, we should filter normal that are prependicular to source viewing ray directions
+    dir_src = torch.nn.functional.normalize(intersection_points[None] - c2w[:, None, :, 3], dim=-1)
+    valid = (dir_src * normal[None]).sum(dim=-1).abs() > 0.1
+
+    return H, valid
 
 
 class PatchWarping(nn.Module):
@@ -192,7 +197,7 @@ class PatchWarping(nn.Module):
         intersection_points, normal, mask = get_intersection_points(ray_samples, sdf, normal, in_image_mask)
 
         # Attention: we construct homography with OPENCV coordinate system
-        H = get_homography(intersection_points, normal, cameras)
+        H, H_valid_mask = get_homography(intersection_points, normal, cameras)
 
         # Attention uv is (y, x) and we should change to (x, y) for homography
         pix_indices = torch.flip(pix_indices, dims=[-1])[mask].float()
@@ -218,6 +223,9 @@ class PatchWarping(nn.Module):
             & (pix_coords[..., 1] > -1.0)
             & (pix_coords[..., 1] < 1.0)
         )  # [n_imgs, n_rays_valid, patch_h*patch_w]
+
+        # combine valid with H
+        valid = valid & H_valid_mask[..., None]
 
         rgb = torch.nn.functional.grid_sample(
             images.permute(0, 3, 1, 2).to(sdf.device),
