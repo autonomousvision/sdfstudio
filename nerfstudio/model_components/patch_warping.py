@@ -96,7 +96,7 @@ def get_intersection_points(
 
 
 def get_homography(
-    intersection_points: torch.Tensor, normal: torch.Tensor, cameras: Cameras, valid_angle_thres: float = 0.2
+    intersection_points: torch.Tensor, normal: torch.Tensor, cameras: Cameras, valid_angle_thres: float = 0.3
 ):
     """get homography
 
@@ -151,8 +151,8 @@ def get_homography(
     H = K[:, None] @ H @ K_inv[None, :1]  # [n_cameras, n_pts, 3, 3]
 
     # compute valid mask for homograpy, we should filter normal that are prependicular to source viewing ray directions
-    dir_src = torch.nn.functional.normalize(intersection_points[None] - c2w[:, None, :, 3], dim=-1)
-    valid = (dir_src * normal[None]).sum(dim=-1).abs() > valid_angle_thres
+    dir_src = torch.nn.functional.normalize(c2w[:, None, :, 3] - intersection_points[None], dim=-1)
+    valid = (dir_src * normal[None]).sum(dim=-1) > valid_angle_thres
 
     return H, valid
 
@@ -160,7 +160,7 @@ def get_homography(
 class PatchWarping(nn.Module):
     """Standard patch warping."""
 
-    def __init__(self, patch_size: int = 31, pixel_offset: float = 0.5, valid_angle_thres: float = 0.2):
+    def __init__(self, patch_size: int = 31, pixel_offset: float = 0.5, valid_angle_thres: float = 0.3):
         super().__init__()
 
         self.patch_size = patch_size

@@ -80,7 +80,7 @@ class MonoSDFModelConfig(ModelConfig):
     """Multi-view consistency warping loss multiplier."""
     patch_size: int = 11
     """Multi-view consistency warping loss patch size."""
-    patch_warp_angle_thres: float = 0.2
+    patch_warp_angle_thres: float = 0.3
     """Threshold for valid homograph of multi-view consistency warping loss"""
     sdf_field: SDFFieldConfig = SDFFieldConfig()
     """Config for SDF Field"""
