@@ -80,6 +80,8 @@ class MonoSDFModelConfig(ModelConfig):
     """Multi-view consistency warping loss multiplier."""
     patch_size: int = 11
     """Multi-view consistency warping loss patch size."""
+    patch_warp_angle_thres: float = 0.2
+    """Threshold for valid homograph of multi-view consistency warping loss"""
     sdf_field: SDFFieldConfig = SDFFieldConfig()
     """Config for SDF Field"""
     num_samples: int = 64
@@ -133,7 +135,9 @@ class MonoSDFModel(Model):
         self.renderer_depth = DepthRenderer()
         self.renderer_normal = SemanticRenderer()
         # patch warping
-        self.patch_warping = PatchWarping(patch_size=self.config.patch_size)
+        self.patch_warping = PatchWarping(
+            patch_size=self.config.patch_size, valid_angle_thres=self.config.patch_warp_angle_thres
+        )
 
         # losses
         self.rgb_loss = L1Loss()
