@@ -320,7 +320,7 @@ class VanillaDataManager(DataManager):  # pylint: disable=abstract-method
             self.eval_dataset,
             num_images_to_sample_from=self.config.eval_num_images_to_sample_from,
             device=self.device,
-            num_workers=self.world_size * 4,
+            num_workers=self.world_size * 2,
             pin_memory=True,
         )
         self.iter_eval_image_dataloader = iter(self.eval_image_dataloader)
@@ -333,13 +333,13 @@ class VanillaDataManager(DataManager):  # pylint: disable=abstract-method
         self.fixed_indices_eval_dataloader = FixedIndicesEvalDataloader(
             input_dataset=self.eval_dataset,
             device=self.device,
-            num_workers=self.world_size * 4,
+            num_workers=self.world_size * 2,
         )
         self.eval_dataloader = RandIndicesEvalDataloader(
             input_dataset=self.eval_dataset,
             image_indices=self.config.eval_image_indices,
             device=self.device,
-            num_workers=self.world_size * 4,
+            num_workers=self.world_size * 2,
         )
 
         # TODO: eval dataloader should be separate from train

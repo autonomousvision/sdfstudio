@@ -39,6 +39,7 @@ class InputDataset(Dataset):
     def __init__(self, dataparser_outputs: DataparserOutputs):
         super().__init__()
         self.dataparser_outputs = dataparser_outputs
+        self.image_cache = {}
 
     def __len__(self):
         return len(self.dataparser_outputs.image_filenames)
@@ -77,7 +78,12 @@ class InputDataset(Dataset):
         Args:
             image_idx: The image index in the dataset.
         """
-        image = self.get_image(image_idx)
+        if image_idx in self.image_cache:
+            image = self.image_cache[image_idx]
+        else:
+            image = self.get_image(image_idx)
+            self.image_cache[image_idx] = image
+
         data = {"image_idx": image_idx}
         data["image"] = image
         for _, data_func_dict in self.dataparser_outputs.additional_inputs.items():
