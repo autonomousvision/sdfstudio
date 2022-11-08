@@ -36,11 +36,12 @@ from nerfstudio.fields.sdf_field import SDFFieldConfig
 from nerfstudio.model_components.losses import (
     L1Loss,
     MSELoss,
+    MultiViewLoss,
     ScaleAndShiftInvariantLoss,
     compute_scale_and_shift,
     monosdf_normal_loss,
-    MultiViewLoss,
 )
+from nerfstudio.model_components.patch_warping import PatchWarping
 from nerfstudio.model_components.ray_samplers import ErrorBoundedSampler
 from nerfstudio.model_components.renderers import (
     AccumulationRenderer,
@@ -48,7 +49,6 @@ from nerfstudio.model_components.renderers import (
     RGBRenderer,
     SemanticRenderer,
 )
-from nerfstudio.model_components.patch_warping import PatchWarping
 from nerfstudio.model_components.scene_colliders import NearFarCollider
 from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.utils import colormaps
@@ -82,6 +82,10 @@ class MonoSDFModelConfig(ModelConfig):
     """Multi-view consistency warping loss patch size."""
     patch_warp_angle_thres: float = 0.3
     """Threshold for valid homograph of multi-view consistency warping loss"""
+    min_patch_variance: float = 0.01
+    """Threshold for minimal patch variance"""
+    topk: int = 4
+    """Number of minimal patch consistency selected for training"""
     sdf_field: SDFFieldConfig = SDFFieldConfig()
     """Config for SDF Field"""
     num_samples: int = 64
@@ -143,7 +147,9 @@ class MonoSDFModel(Model):
         self.rgb_loss = L1Loss()
         self.eikonal_loss = MSELoss()
         self.depth_loss = ScaleAndShiftInvariantLoss(alpha=0.5, scales=1)
-        self.patch_loss = MultiViewLoss(patch_size=self.config.patch_size, topk=4)
+        self.patch_loss = MultiViewLoss(
+            patch_size=self.config.patch_size, topk=self.config.topk, min_patch_variance=self.config.min_patch_variance
+        )
 
         # metrics
         self.psnr = PeakSignalNoiseRatio(data_range=1.0)
