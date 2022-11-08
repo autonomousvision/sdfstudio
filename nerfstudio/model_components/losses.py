@@ -370,9 +370,10 @@ class SSIM(nn.Module):
 class NCC(nn.Module):
     """Layer to compute the normalization cross correlation (NCC) of patches"""
 
-    def __init__(self, patch_size: int = 11):
+    def __init__(self, patch_size: int = 11, min_patch_variance: float = 0.01):
         super(NCC, self).__init__()
         self.patch_size = patch_size
+        self.min_patch_variance = min_patch_variance
 
     def forward(self, x, y):
         # TODO if we use gray image we should do it right after loading the image to save computations
@@ -393,7 +394,10 @@ class NCC(nn.Module):
         ncc = norm / (denom + 1e-6)
 
         # ignore pathces with low variances
-        ncc[var < 0.001] = 1.0
+        not_valid = (torch.square(x_normalized).sum(dim=(1, 2)) < self.min_patch_variance) | (
+            torch.square(y_normalized).sum(dim=(1, 2)) < self.min_patch_variance
+        )
+        ncc[not_valid] = 1.0
 
         score = 1 - ncc.clip(-1.0, 1.0)  # 0->2: smaller, better
         return score[:, None, None, None]
@@ -402,14 +406,15 @@ class NCC(nn.Module):
 class MultiViewLoss(nn.Module):
     """compute multi-view consistency loss"""
 
-    def __init__(self, patch_size: int = 11, topk: int = 4):
+    def __init__(self, patch_size: int = 11, topk: int = 4, min_patch_variance: float = 0.01):
         super(MultiViewLoss, self).__init__()
         self.patch_size = patch_size
         self.topk = topk
+        self.min_patch_variance = min_patch_variance
         # TODO make metric configurable
         # self.ssim = SSIM(patch_size=patch_size)
         # self.ncc = NCC(patch_size=patch_size)
-        self.ssim = NCC(patch_size=patch_size)
+        self.ssim = NCC(patch_size=patch_size, min_patch_variance=min_patch_variance)
 
         self.iter = 0
 
@@ -527,5 +532,4 @@ class MultiViewLoss(nn.Module):
             if self.iter == 9:
                 breakpoint()
 
-        # TODO use sum / valid_sum()
-        return torch.mean(min_ssim)
+        return torch.sum(min_ssim) / (min_ssim_valid.float().sum() + 1e-6)
