@@ -72,11 +72,11 @@ class MonoSDFModelConfig(ModelConfig):
     """Whether use single jitter or not for the proposal networks."""
     eikonal_loss_mult: float = 0.1
     """Monocular normal consistency loss multiplier."""
-    mono_normal_loss_mult: float = 0.05
+    mono_normal_loss_mult: float = 0.0
     """Monocular normal consistency loss multiplier."""
-    mono_depth_loss_mult: float = 0.1
+    mono_depth_loss_mult: float = 0.0
     """Monocular depth consistency loss multiplier."""
-    patch_warp_loss_mult: float = 1.0
+    patch_warp_loss_mult: float = 0.0
     """Multi-view consistency warping loss multiplier."""
     patch_size: int = 11
     """Multi-view consistency warping loss patch size."""
