@@ -153,6 +153,9 @@ class TrainerConfig(PrintableConfig):
     load_step: Optional[int] = None
     """Optionally specify model step to load from; if none, will find most recent model in load_dir."""
     load_config: Optional[Path] = None
+    """Optionally specify model config to load from; if none, will use the default config?"""
+    load_scheduler: bool = True
+    """Whether to load the lr scheduler state_dict if exists"""
 
 
 # Viewer related configs

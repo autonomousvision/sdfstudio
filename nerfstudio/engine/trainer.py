@@ -253,7 +253,7 @@ class Trainer:
             # load the checkpoints for pipeline, optimizers, and gradient scalar
             self.pipeline.load_pipeline(loaded_state["pipeline"])
             self.optimizers.load_optimizers(loaded_state["optimizers"])
-            if "schedulers" in loaded_state:
+            if "schedulers" in loaded_state and self.config.trainer.load_scheduler:
                 self.optimizers.load_schedulers(loaded_state["schedulers"])
             self.grad_scaler.load_state_dict(loaded_state["scalers"])
             CONSOLE.print(f"done loading checkpoint from {load_path}")
