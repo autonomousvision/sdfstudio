@@ -130,3 +130,19 @@ class MultiStepSchedulerConfig(InstantiateConfig):
             milestones=[self.max_steps // 2, self.max_steps * 3 // 4, self.max_steps * 9 // 10],
             gamma=0.33,
         )
+
+
+@dataclass
+class ExponentialSchedulerConfig(InstantiateConfig):
+    """Basic scheduler config with self-defined exponential decay schedule"""
+
+    _target: Type = field(default_factory=lambda: lr_scheduler.ExponentialLR)
+    decay_rate: float = 0.1
+    max_steps: int = 1000000
+
+    def setup(self, optimizer=None, lr_init=None, **kwargs) -> Any:
+        """Returns the instantiated object using the config."""
+        return self._target(
+            optimizer,
+            self.decay_rate ** (1.0 / self.max_steps),
+        )
