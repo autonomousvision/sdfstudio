@@ -33,7 +33,10 @@ from nerfstudio.data.dataparsers.friends_dataparser import FriendsDataParserConf
 from nerfstudio.data.dataparsers.nerfstudio_dataparser import NerfstudioDataParserConfig
 from nerfstudio.data.dataparsers.uniscene_dataparser import UniSceneDataParserConfig
 from nerfstudio.engine.optimizers import AdamOptimizerConfig, RAdamOptimizerConfig
-from nerfstudio.engine.schedulers import MultiStepSchedulerConfig
+from nerfstudio.engine.schedulers import (
+    ExponentialSchedulerConfig,
+    MultiStepSchedulerConfig,
+)
 from nerfstudio.models.base_model import VanillaModelConfig
 from nerfstudio.models.instant_ngp import InstantNGPModelConfig
 from nerfstudio.models.mipnerf import MipNerfModel
@@ -55,16 +58,19 @@ descriptions = {
     "semantic-nerfw": "Predicts semantic segmentations and filters out transient objects.",
     "vanilla-nerf": "Original NeRF model. (slow)",
     "monosdf": "Implementation of MonoSDF.",
-    "mv-monosdf": "Implementation of Neural Warp MonoSDF.",
+    "volsdf": "Implementation of VolSDF.",
+    "geo-volsdf": "Implementation of patch warping from GeoNeuS with VolSDF.",
+    "neuralwarp": "Implementation of Neural Warp for VolSDF.",
 }
 
-method_configs["mv-monosdf"] = Config(
-    method_name="mv-monosdf",
+method_configs["neuralwarp"] = Config(
+    method_name="neuralwarp",
     trainer=TrainerConfig(
-        steps_per_eval_image=500,
-        steps_per_eval_batch=500,
+        steps_per_eval_image=5000,
+        steps_per_eval_batch=5000,
         steps_per_save=20000,
-        max_num_iterations=300000,
+        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
+        max_num_iterations=150001,  # 150K - 100K = 50K iterations as the volsdf model is pretrained for 100K
         mixed_precision=False,
     ),
     pipeline=FlexibleInputPipelineConfig(
@@ -76,12 +82,45 @@ method_configs["mv-monosdf"] = Config(
                 mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
             ),
         ),
-        model=MonoSDFModelConfig(eval_num_rays_per_chunk=1024),
+        model=MonoSDFModelConfig(patch_warp_loss_mult=0.1, eval_num_rays_per_chunk=1024),
     ),
     optimizers={
         "fields": {
             "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
-            "scheduler": MultiStepSchedulerConfig(max_steps=300000),
+            "scheduler": MultiStepSchedulerConfig(
+                max_steps=1000000
+            ),  # set max_steps to a large value so it never step and we will use the last_lr form the pretrained model
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer",
+)
+
+method_configs["geo-volsdf"] = Config(
+    method_name="geo-volsdf",
+    trainer=TrainerConfig(
+        steps_per_eval_image=5000,
+        steps_per_eval_batch=5000,
+        steps_per_save=20000,
+        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
+        max_num_iterations=200001,
+        mixed_precision=False,
+    ),
+    pipeline=FlexibleInputPipelineConfig(
+        datamanager=FlexibleDataManagerConfig(
+            dataparser=UniSceneDataParserConfig(),
+            train_num_rays_per_batch=1024,
+            eval_num_rays_per_batch=1024,
+            camera_optimizer=CameraOptimizerConfig(
+                mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
+            ),
+        ),
+        model=MonoSDFModelConfig(patch_warp_loss_mult=0.1, eval_num_rays_per_chunk=1024),
+    ),
+    optimizers={
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "scheduler": ExponentialSchedulerConfig(decay_rate=0.1, max_steps=200000),
         },
     },
     viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
@@ -91,10 +130,42 @@ method_configs["mv-monosdf"] = Config(
 method_configs["monosdf"] = Config(
     method_name="monosdf",
     trainer=TrainerConfig(
-        steps_per_eval_image=500,
-        steps_per_eval_batch=500,
+        steps_per_eval_image=5000,
+        steps_per_eval_batch=5000,
         steps_per_save=20000,
-        max_num_iterations=300000,
+        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
+        max_num_iterations=200000,
+        mixed_precision=False,
+    ),
+    pipeline=VanillaPipelineConfig(
+        datamanager=VanillaDataManagerConfig(
+            dataparser=UniSceneDataParserConfig(),
+            train_num_rays_per_batch=1024,
+            eval_num_rays_per_batch=1024,
+            camera_optimizer=CameraOptimizerConfig(
+                mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
+            ),
+        ),
+        model=MonoSDFModelConfig(mono_depth_loss_mult=0.1, mono_normal_loss_mult=0.05, eval_num_rays_per_chunk=1024),
+    ),
+    optimizers={
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "scheduler": ExponentialSchedulerConfig(decay_rate=0.1, max_steps=200000),
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer",
+)
+
+method_configs["volsdf"] = Config(
+    method_name="volsdf",
+    trainer=TrainerConfig(
+        steps_per_eval_image=5000,
+        steps_per_eval_batch=5000,
+        steps_per_save=20000,
+        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
+        max_num_iterations=100000,
         mixed_precision=False,
     ),
     pipeline=VanillaPipelineConfig(
@@ -111,7 +182,7 @@ method_configs["monosdf"] = Config(
     optimizers={
         "fields": {
             "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
-            "scheduler": MultiStepSchedulerConfig(max_steps=300000),
+            "scheduler": ExponentialSchedulerConfig(decay_rate=0.1, max_steps=100000),
         },
     },
     viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
