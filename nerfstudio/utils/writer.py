@@ -262,10 +262,12 @@ class TimeWriter:
         self.duration: float = 0.0
 
     def __enter__(self):
+        torch.cuda.synchronize()
         self.start = time()
         return self
 
     def __exit__(self, *args):
+        torch.cuda.synchronize()
         self.duration = time() - self.start
         update_step = self.step is not None
         if self.write:
