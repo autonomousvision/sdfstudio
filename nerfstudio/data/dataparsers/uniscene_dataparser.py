@@ -50,6 +50,7 @@ def get_src_from_pairs(
             src_idx = torch.cat([src_idx[[0]], src_idx[perm_idx[:neighbors_num]]])
         else:
             src_idx = src_idx[: neighbors_num + 1]
+    src_idx = src_idx.to(all_imgs.device)
     return {"src_imgs": all_imgs[src_idx], "src_idxs": src_idx}
 
 
@@ -301,7 +302,9 @@ class UniScene(DataParser):
                     sources_array = [sources_array[0]] + sources_array[:1:-1]
                 pairs_srcs.append(sources_array)
             pairs_srcs = torch.tensor(pairs_srcs)
-            all_imgs = torch.stack([get_image(image_filename) for image_filename in sorted(image_filenames)], axis=0)
+            all_imgs = torch.stack(
+                [get_image(image_filename) for image_filename in sorted(image_filenames)], axis=0
+            ).cuda()
 
             additional_inputs_dict["pairs"] = {
                 "func": get_src_from_pairs,
