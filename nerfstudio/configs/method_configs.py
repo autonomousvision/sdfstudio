@@ -120,7 +120,9 @@ method_configs["geo-volsdf"] = Config(
     optimizers={
         "fields": {
             "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
-            "scheduler": ExponentialSchedulerConfig(decay_rate=0.1, max_steps=200000),
+            "scheduler": MultiStepSchedulerConfig(
+                max_steps=1000000
+            ),  # set max_steps to a large value so it never step and we will use the last_lr form the pretrained model
         },
     },
     viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
