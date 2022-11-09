@@ -428,18 +428,18 @@ class MultiViewLoss(nn.Module):
         Returns:
             _type_: _description_
         """
-        num_imgs, num_rays = patches.shape[:2]
+        num_imgs, num_rays, _, num_channels = patches.shape
         ref_patches = (
             patches[:1, ...]
-            .reshape(1, num_rays, self.patch_size, self.patch_size, 3)
-            .expand(num_imgs - 1, num_rays, self.patch_size, self.patch_size, 3)
-            .reshape(-1, self.patch_size, self.patch_size, 3)
+            .reshape(1, num_rays, self.patch_size, self.patch_size, num_channels)
+            .expand(num_imgs - 1, num_rays, self.patch_size, self.patch_size, num_channels)
+            .reshape(-1, self.patch_size, self.patch_size, num_channels)
             .permute(0, 3, 1, 2)
         )  # [N_src*N_rays, 3, patch_size, patch_size]
         src_patches = (
             patches[1:, ...]
-            .reshape(num_imgs - 1, num_rays, self.patch_size, self.patch_size, 3)
-            .reshape(-1, self.patch_size, self.patch_size, 3)
+            .reshape(num_imgs - 1, num_rays, self.patch_size, self.patch_size, num_channels)
+            .reshape(-1, self.patch_size, self.patch_size, num_channels)
             .permute(0, 3, 1, 2)
         )  # [N_src*N_rays, 3, patch_size, patch_size]
 
