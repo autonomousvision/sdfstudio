@@ -33,14 +33,12 @@ from nerfstudio.data.dataparsers.friends_dataparser import FriendsDataParserConf
 from nerfstudio.data.dataparsers.nerfstudio_dataparser import NerfstudioDataParserConfig
 from nerfstudio.data.dataparsers.uniscene_dataparser import UniSceneDataParserConfig
 from nerfstudio.engine.optimizers import AdamOptimizerConfig, RAdamOptimizerConfig
-from nerfstudio.engine.schedulers import (
-    ExponentialSchedulerConfig,
-    MultiStepSchedulerConfig,
-)
+from nerfstudio.engine.schedulers import ExponentialSchedulerConfig, MultiStepSchedulerConfig, NeuSSchedulerConfig
 from nerfstudio.models.base_model import VanillaModelConfig
 from nerfstudio.models.instant_ngp import InstantNGPModelConfig
 from nerfstudio.models.mipnerf import MipNerfModel
 from nerfstudio.models.monosdf import MonoSDFModelConfig
+from nerfstudio.models.neus import NeuSModelConfig
 from nerfstudio.models.nerfacto import NerfactoModelConfig
 from nerfstudio.models.semantic_nerfw import SemanticNerfWModelConfig
 from nerfstudio.models.vanilla_nerf import NeRFModel
@@ -61,6 +59,8 @@ descriptions = {
     "volsdf": "Implementation of VolSDF.",
     "geo-volsdf": "Implementation of patch warping from GeoNeuS with VolSDF.",
     "neuralwarp": "Implementation of Neural Warp for VolSDF.",
+    "neus": "Implementation of NeuS.",
+    "geo-neus": "Implementation of patch warping from GeoNeuS with NeuS.",
 }
 
 method_configs["neuralwarp"] = Config(
@@ -185,6 +185,71 @@ method_configs["volsdf"] = Config(
         "fields": {
             "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
             "scheduler": ExponentialSchedulerConfig(decay_rate=0.1, max_steps=100000),
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer",
+)
+
+method_configs["geo-neus"] = Config(
+    method_name="geo-neus",
+    trainer=TrainerConfig(
+        steps_per_eval_image=500,
+        steps_per_eval_batch=5000,
+        steps_per_save=20000,
+        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
+        max_num_iterations=200000,
+        mixed_precision=False,
+    ),
+    pipeline=FlexibleInputPipelineConfig(
+        datamanager=FlexibleDataManagerConfig(
+            dataparser=UniSceneDataParserConfig(),
+            train_num_rays_per_batch=1024,
+            eval_num_rays_per_batch=1024,
+            camera_optimizer=CameraOptimizerConfig(
+                mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
+            ),
+        ),
+        model=NeuSModelConfig(patch_warp_loss_mult=0.1, eval_num_rays_per_chunk=1024),
+    ),
+    optimizers={
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "scheduler": MultiStepSchedulerConfig(
+                max_steps=1000000
+            ),  # set max_steps to a large value so it never step and we will use the last_lr form the pretrained model,
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer",
+)
+
+
+method_configs["neus"] = Config(
+    method_name="neus",
+    trainer=TrainerConfig(
+        steps_per_eval_image=500,
+        steps_per_eval_batch=5000,
+        steps_per_save=20000,
+        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
+        max_num_iterations=100000,
+        mixed_precision=False,
+    ),
+    pipeline=VanillaPipelineConfig(
+        datamanager=VanillaDataManagerConfig(
+            dataparser=UniSceneDataParserConfig(),
+            train_num_rays_per_batch=1024,
+            eval_num_rays_per_batch=1024,
+            camera_optimizer=CameraOptimizerConfig(
+                mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
+            ),
+        ),
+        model=NeuSModelConfig(eval_num_rays_per_chunk=1024),
+    ),
+    optimizers={
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=5000, learning_rate_alpha=0.05, max_steps=300000),
         },
     },
     viewer=ViewerConfig(num_rays_per_chunk=1 << 15),

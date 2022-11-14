@@ -250,7 +250,7 @@ class MonoSDFModel(Model):
         if self.training:
             # eikonal loss
             grad_theta = outputs["eik_grad"]
-            loss_dict["eikonal_loss"] = ((grad_theta.norm(2, dim=1) - 1) ** 2).mean() * self.config.eikonal_loss_mult
+            loss_dict["eikonal_loss"] = ((grad_theta.norm(2, dim=-1) - 1) ** 2).mean() * self.config.eikonal_loss_mult
 
             # monocular normal loss
             if "normal" in batch and self.config.mono_normal_loss_mult > 0.0:

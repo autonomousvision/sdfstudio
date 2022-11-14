@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch import nn
 from torch.nn.parameter import Parameter
 from torchtyping import TensorType
@@ -63,6 +64,26 @@ class LaplaceDensity(nn.Module):  # alpha * Laplace(loc=0, scale=beta).cdf(-sdf)
         """return current beta value"""
         beta = self.beta.abs() + self.beta_min
         return beta
+
+
+class SingleVarianceNetwork(nn.Module):
+    """Variance network in NeuS
+
+    Args:
+        nn (_type_): init value in NeuS variance network
+    """
+
+    def __init__(self, init_val):
+        super(SingleVarianceNetwork, self).__init__()
+        self.register_parameter("variance", nn.Parameter(init_val * torch.ones(1), requires_grad=True))
+
+    def forward(self, x):
+        """Returns current variance value"""
+        return torch.ones([len(x), 1], device=x.device) * torch.exp(self.variance * 10.0)
+
+    def get_variance(self):
+        """return current variance value"""
+        return torch.exp(self.variance * 10.0).clip(1e-6, 1e6)
 
 
 @dataclass
@@ -203,8 +224,12 @@ class SDFField(Field):
                 print("=======", lin.weight.shape)
             setattr(self, "glin" + str(l), lin)
 
-        # TODO make this configurable
+        # laplace function for transform sdf to density from VolSDF
         self.laplace_density = LaplaceDensity(init_val=self.config.beta_init)
+
+        # TODO use different name for beta_init for config
+        # deviation_network to compute alpha from sdf from NeuS
+        self.deviation_network = SingleVarianceNetwork(init_val=self.config.beta_init)
 
         # color network
         dims = [self.config.hidden_dim_color for _ in range(self.config.num_layers_color)]
@@ -231,6 +256,12 @@ class SDFField(Field):
         self.softplus = nn.Softplus(beta=100)
         self.relu = nn.ReLU()
         self.sigmoid = torch.nn.Sigmoid()
+
+        self._cos_anneal_ratio = 1.0
+
+    def set_cos_anneal_ratio(self, anneal: float) -> None:
+        """Set the anneal value for the proposal network."""
+        self._cos_anneal_ratio = anneal
 
     def forward_geonetwork(self, inputs):
         """forward the geonetwork"""
@@ -289,6 +320,35 @@ class SDFField(Field):
         density = self.laplace_density(sdf)
         return density, geo_feature
 
+    def get_alpha(self, ray_samples: RaySamples, sdf, gradients):
+        """compute alpha from sdf as in NeuS"""
+
+        inv_s = self.deviation_network.get_variance()  # Single parameter
+
+        true_cos = (ray_samples.frustums.directions * gradients).sum(-1, keepdim=True)
+
+        # anneal as NeuS
+        cos_anneal_ratio = self._cos_anneal_ratio
+
+        # "cos_anneal_ratio" grows from 0 to 1 in the beginning training iterations. The anneal strategy below makes
+        # the cos value "not dead" at the beginning training iterations, for better convergence.
+        iter_cos = -(
+            F.relu(-true_cos * 0.5 + 0.5) * (1.0 - cos_anneal_ratio) + F.relu(-true_cos) * cos_anneal_ratio
+        )  # always non-positive
+
+        # Estimate signed distances at section points
+        estimated_next_sdf = sdf + iter_cos * ray_samples.deltas * 0.5
+        estimated_prev_sdf = sdf - iter_cos * ray_samples.deltas * 0.5
+
+        prev_cdf = torch.sigmoid(estimated_prev_sdf * inv_s)
+        next_cdf = torch.sigmoid(estimated_next_sdf * inv_s)
+
+        p = prev_cdf - next_cdf
+        c = prev_cdf
+
+        alpha = ((p + 1e-5) / (c + 1e-5)).clip(0.0, 1.0)
+        return alpha
+
     def get_colors(self, points, directions, normals, geo_features, camera_indices):
         """compute colors"""
         d = self.direction_encoding(directions)
@@ -331,7 +391,7 @@ class SDFField(Field):
         rgb = self.sigmoid(h)
         return rgb
 
-    def get_outputs(self, ray_samples: RaySamples):
+    def get_outputs(self, ray_samples: RaySamples, return_alphas=False):
         """compute output of ray samples"""
         if ray_samples.camera_indices is None:
             raise AttributeError("Camera indices are not provided.")
@@ -374,13 +434,18 @@ class SDFField(Field):
             }
         )
 
+        if return_alphas:
+            # TODO use mid point sdf for NeuS
+            alphas = self.get_alpha(ray_samples, sdf, gradients)
+            outputs.update({FieldHeadNames.ALPHA: alphas, FieldHeadNames.GRADIENT: gradients})
+
         return outputs
 
-    def forward(self, ray_samples: RaySamples):
+    def forward(self, ray_samples: RaySamples, return_alphas=False):
         """Evaluates the field at points along the ray.
 
         Args:
             ray_samples: Samples to evaluate field on.
         """
-        field_outputs = self.get_outputs(ray_samples)
+        field_outputs = self.get_outputs(ray_samples, return_alphas=return_alphas)
         return field_outputs

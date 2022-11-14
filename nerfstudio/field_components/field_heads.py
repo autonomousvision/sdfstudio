@@ -38,6 +38,8 @@ class FieldHeadNames(Enum):
     SEMANTICS_THING = "semantics_thing"
     NORMAL = "normal"
     SDF = "sdf"
+    ALPHA = "alpha"
+    GRADIENT = "gradient"
 
 
 class FieldHead(FieldComponent):

@@ -604,8 +604,8 @@ class ErrorBoundedSampler(Sampler):
         # samplers
         self.uniform_sampler = UniformSampler(single_jitter=single_jitter)
         self.pdf_sampler = PDFSampler(
-            include_original=False, 
-            single_jitter=single_jitter, 
+            include_original=False,
+            single_jitter=single_jitter,
             histogram_padding=1e-5,
         )
 
@@ -624,10 +624,10 @@ class ErrorBoundedSampler(Sampler):
 
         # Start with uniform sampling
         ray_samples = self.uniform_sampler(ray_bundle, num_samples=self.num_samples_eval)
-        
+
         # Get maximum beta from the upper bound (Lemma 2)
         deltas = ray_samples.deltas.squeeze(-1)
-        
+
         bound = (1.0 / (4.0 * torch.log(torch.tensor(self.eps + 1.0)))) * (deltas**2.0).sum(-1)
         beta = torch.sqrt(bound)
 
@@ -637,17 +637,17 @@ class ErrorBoundedSampler(Sampler):
 
         # Algorithm 1
         while not_converge and total_iters < self.max_total_iters:
-            
+
             with torch.no_grad():
                 new_sdf = sdf_fn(new_samples)
-            
+
             # merge sdf predictions
             if sorted_index is not None:
                 sdf_merge = torch.cat([sdf.squeeze(-1), new_sdf.squeeze(-1)], -1)
                 sdf = torch.gather(sdf_merge, 1, sorted_index).unsqueeze(-1)
             else:
                 sdf = new_sdf
-            
+
             # Calculating the bound d* (Theorem 1)
             d_star = self.get_dstar(sdf, ray_samples)
 
@@ -666,22 +666,24 @@ class ErrorBoundedSampler(Sampler):
             if not_converge and total_iters < self.max_total_iters:
                 # Sample more points proportional to the current error bound
                 deltas = ray_samples.deltas.squeeze(-1)
-                
+
                 error_per_section = (
-                    torch.exp(-d_star / beta.unsqueeze(-1)) * (deltas ** 2.0) / (4 * beta.unsqueeze(-1) ** 2)
+                    torch.exp(-d_star / beta.unsqueeze(-1)) * (deltas**2.0) / (4 * beta.unsqueeze(-1) ** 2)
                 )
-                
+
                 error_integral = torch.cumsum(error_per_section, dim=-1)
                 weights = (torch.clamp(torch.exp(error_integral), max=1.0e6) - 1.0) * transmittance[..., 0]
 
-                new_samples = self.pdf_sampler(ray_bundle, ray_samples, weights.unsqueeze(-1), num_samples=self.num_samples_eval)
+                new_samples = self.pdf_sampler(
+                    ray_bundle, ray_samples, weights.unsqueeze(-1), num_samples=self.num_samples_eval
+                )
 
                 ray_samples, sorted_index = self.merge_ray_samples(ray_bundle, ray_samples, new_samples)
-                
+
             else:
                 # Sample the final sample set to be used in the volume rendering integral
                 ray_samples = self.pdf_sampler(ray_bundle, ray_samples, weights, num_samples=self.num_samples)
-        
+
         if return_eikonal_points:
             # sample some of the near surface points for eikonal loss
             sampled_points = ray_samples.frustums.get_positions().view(-1, 3)
@@ -692,10 +694,10 @@ class ErrorBoundedSampler(Sampler):
         if self.num_samples_extra > 0:
             ray_samples_uniform = self.uniform_sampler(ray_bundle, num_samples=self.num_samples_extra)
             ray_samples, _ = self.merge_ray_samples(ray_bundle, ray_samples, ray_samples_uniform)
-        
+
         if return_eikonal_points:
             return ray_samples, points
-        
+
         return ray_samples
 
     def get_dstar(self, sdf, ray_samples: RaySamples):
@@ -713,12 +715,12 @@ class ErrorBoundedSampler(Sampler):
         mask = ~first_cond & ~second_cond & (b + c - a > 0)
         d_star[mask] = (2.0 * torch.sqrt(area_before_sqrt[mask])) / (a[mask])
         d_star = (d[:, 1:].sign() * d[:, :-1].sign() == 1) * d_star  # Fixing the sign
-        
+
         # padding to make the same shape as ray_samples
         # d_star_left = torch.cat((d_star[:, :1], d_star), dim=-1)
         # d_star_right = torch.cat((d_star, d_star[:, -1:]), dim=-1)
         # d_star = torch.minimum(d_star_left, d_star_right)
-        
+
         d_star = torch.cat((d_star, d_star[:, -1:]), dim=-1)
         return d_star
 
@@ -740,16 +742,16 @@ class ErrorBoundedSampler(Sampler):
 
         deltas = ray_samples.deltas.squeeze(-1)
         delta_density = deltas * densities
-        
+
         integral_estimation = torch.cumsum(delta_density[..., :-1], dim=-1)
         integral_estimation = torch.cat(
             [torch.zeros((*integral_estimation.shape[:1], 1), device=densities.device), integral_estimation], dim=-1
         )
-        
-        error_per_section = torch.exp(-d_star / beta) * (deltas ** 2.) / (4 * beta ** 2)
+
+        error_per_section = torch.exp(-d_star / beta) * (deltas**2.0) / (4 * beta**2)
         error_integral = torch.cumsum(error_per_section, dim=-1)
-        bound_opacity = (torch.clamp(torch.exp(error_integral), max=1.e6) - 1.0) * torch.exp(-integral_estimation)
-        
+        bound_opacity = (torch.clamp(torch.exp(error_integral), max=1.0e6) - 1.0) * torch.exp(-integral_estimation)
+
         return bound_opacity.max(-1)[0]
 
     def merge_ray_samples(self, ray_bundle: RayBundle, ray_samples_1: RaySamples, ray_samples_2: RaySamples):
@@ -759,21 +761,21 @@ class ErrorBoundedSampler(Sampler):
             ray_samples_1 : ray_samples to merge
             ray_samples_2 : ray_samples to merge
         """
-        
+
         starts_1 = ray_samples_1.spacing_starts[..., 0]
         starts_2 = ray_samples_2.spacing_starts[..., 0]
-        
+
         ends = torch.maximum(ray_samples_1.spacing_ends[..., -1:, 0], ray_samples_2.spacing_ends[..., -1:, 0])
-        
+
         bins, sorted_index = torch.sort(torch.cat([starts_1, starts_2], -1), -1)
-        
+
         bins = torch.cat([bins, ends], dim=-1)
-        
+
         # Stop gradients
         bins = bins.detach()
 
         euclidean_bins = ray_samples_1.spacing_to_euclidean_fn(bins)
-        
+
         ray_samples = ray_bundle.get_ray_samples(
             bin_starts=euclidean_bins[..., :-1, None],
             bin_ends=euclidean_bins[..., 1:, None],
@@ -781,19 +783,19 @@ class ErrorBoundedSampler(Sampler):
             spacing_ends=bins[..., 1:, None],
             spacing_to_euclidean_fn=ray_samples_1.spacing_to_euclidean_fn,
         )
-        
+
         return ray_samples, sorted_index
 
 
-def save_points(path_save, pts, colors = None, normals = None, BRG2RGB=False):
-    '''save points to point cloud using open3d
-    '''
+def save_points(path_save, pts, colors=None, normals=None, BRG2RGB=False):
+    """save points to point cloud using open3d"""
     assert len(pts) > 0
     if colors is not None:
         assert colors.shape[1] == 3
     assert pts.shape[1] == 3
     import open3d as o3d
     import numpy as np
+
     cloud = o3d.geometry.PointCloud()
     cloud.points = o3d.utility.Vector3dVector(pts)
     if colors is not None:
@@ -802,9 +804,137 @@ def save_points(path_save, pts, colors = None, normals = None, BRG2RGB=False):
             colors = colors / np.max(colors)
         if BRG2RGB:
             colors = np.stack([colors[:, 2], colors[:, 1], colors[:, 0]], axis=-1)
-        cloud.colors = o3d.utility.Vector3dVector(colors) 
+        cloud.colors = o3d.utility.Vector3dVector(colors)
     if normals is not None:
-        cloud.normals = o3d.utility.Vector3dVector(normals) 
+        cloud.normals = o3d.utility.Vector3dVector(normals)
 
     o3d.io.write_point_cloud(path_save, cloud)
-    
+
+
+class NeuSSampler(Sampler):
+    """NeuS sampler that uses a sdf network to generate samples with fixed variance value in each iterations."""
+
+    def __init__(
+        self,
+        num_samples: int = 64,
+        num_samples_importance: int = 64,
+        num_samples_outside: int = 32,
+        num_upsample_steps: int = 4,
+        single_jitter: bool = True,
+    ) -> None:
+        super().__init__()
+        self.num_samples = num_samples
+        self.num_samples_importance = num_samples_importance
+        self.num_samples_outside = num_samples_outside
+        self.num_upsample_steps = num_upsample_steps
+        self.single_jitter = single_jitter
+
+        # samplers
+        self.uniform_sampler = UniformSampler(single_jitter=single_jitter)
+        self.pdf_sampler = PDFSampler(
+            include_original=False,
+            single_jitter=single_jitter,
+            histogram_padding=1e-5,
+        )
+        self.outside_sampler = LinearDisparitySampler()
+        # TODO make it outside
+        # for merge samples
+        self.error_bounded_sampler = ErrorBoundedSampler()
+
+    def generate_ray_samples(
+        self,
+        ray_bundle: Optional[RayBundle] = None,
+        sdf_fn: Optional[Callable] = None,
+    ) -> Union[Tuple[RaySamples, torch.Tensor], RaySamples]:
+        assert ray_bundle is not None
+        assert sdf_fn is not None
+
+        # Start with uniform sampling
+        ray_samples = self.uniform_sampler(ray_bundle, num_samples=self.num_samples)
+
+        total_iters = 0
+        sorted_index = None
+        new_samples = ray_samples
+
+        # TODO make this configurable
+        base_variance = 64
+
+        while total_iters < self.num_upsample_steps:
+
+            with torch.no_grad():
+                new_sdf = sdf_fn(new_samples)
+
+            # merge sdf predictions
+            if sorted_index is not None:
+                sdf_merge = torch.cat([sdf.squeeze(-1), new_sdf.squeeze(-1)], -1)
+                sdf = torch.gather(sdf_merge, 1, sorted_index).unsqueeze(-1)
+            else:
+                sdf = new_sdf
+
+            # compute with fix variances
+            alphas = self.rendering_sdf_with_fixed_inv_s(
+                ray_samples, sdf.reshape(ray_samples.shape), inv_s=base_variance * 2**total_iters
+            )
+
+            weights = ray_samples.get_weights_from_alphas(alphas[..., None])
+            weights = torch.cat((weights, torch.zeros_like(weights[:, :1])), dim=1)
+
+            new_samples = self.pdf_sampler(
+                ray_bundle,
+                ray_samples,
+                weights,
+                num_samples=self.num_samples_importance // self.num_upsample_steps,
+            )
+
+            ray_samples, sorted_index = self.error_bounded_sampler.merge_ray_samples(
+                ray_bundle, ray_samples, new_samples
+            )
+
+            total_iters += 1
+
+        # save_points("p.ply", ray_samples.frustums.get_start_positions().detach().cpu().numpy().reshape(-1, 3))
+        # exit(-1)
+        # TODO
+        # sample more points outside surface
+        # if self.num_samples_outside > 0:
+        #   ray_samples_uniform = self.outside_sampler(ray_bundle, num_samples=self.num_samples_outside)
+        #     ray_samples, _ = self.merge_ray_samples(ray_bundle, ray_samples, ray_samples_uniform)
+
+        return ray_samples
+
+    def rendering_sdf_with_fixed_inv_s(self, ray_samples: RaySamples, sdf: torch.Tensor, inv_s):
+        """rendering given a fixed inv_s as NeuS"""
+        batch_size = ray_samples.shape[0]
+        prev_sdf, next_sdf = sdf[:, :-1], sdf[:, 1:]
+        deltas = ray_samples.deltas[:, :-1, 0]
+        mid_sdf = (prev_sdf + next_sdf) * 0.5
+        cos_val = (next_sdf - prev_sdf) / (deltas + 1e-5)
+
+        # ----------------------------------------------------------------------------------------------------------
+        # Use min value of [ cos, prev_cos ]
+        # Though it makes the sampling (not rendering) a little bit biased, this strategy can make the sampling more
+        # robust when meeting situations like below:
+        #
+        # SDF
+        # ^
+        # |\          -----x----...
+        # | \        /
+        # |  x      x
+        # |---\----/-------------> 0 level
+        # |    \  /
+        # |     \/
+        # |
+        # ----------------------------------------------------------------------------------------------------------
+        prev_cos_val = torch.cat([torch.zeros([batch_size, 1], device=sdf.device), cos_val[:, :-1]], dim=-1)
+        cos_val = torch.stack([prev_cos_val, cos_val], dim=-1)
+        cos_val, _ = torch.min(cos_val, dim=-1, keepdim=False)
+        cos_val = cos_val.clip(-1e3, 0.0)
+
+        dist = deltas
+        prev_esti_sdf = mid_sdf - cos_val * dist * 0.5
+        next_esti_sdf = mid_sdf + cos_val * dist * 0.5
+        prev_cdf = torch.sigmoid(prev_esti_sdf * inv_s)
+        next_cdf = torch.sigmoid(next_esti_sdf * inv_s)
+        alpha = (prev_cdf - next_cdf + 1e-5) / (prev_cdf + 1e-5)
+
+        return alpha
