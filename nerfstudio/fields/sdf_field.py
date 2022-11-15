@@ -394,6 +394,10 @@ class SDFField(Field):
                 h = self.relu(h)
 
         rgb = self.sigmoid(h)
+
+        # unisurf
+        # rgb = self.tanh(h) * 0.5 + 0.5
+
         return rgb
 
     def get_outputs(self, ray_samples: RaySamples, return_alphas=False, return_occupancy=False):

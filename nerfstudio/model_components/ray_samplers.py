@@ -949,6 +949,7 @@ class UniSurfSampler(Sampler):
         self,
         num_samples_interval: int = 64,
         num_samples_outside: int = 32,
+        num_samples_importance: int = 32,
         num_marching_steps: int = 256,
         num_secant_steps: int = 8,
         interval_start: float = 0.25,
@@ -959,6 +960,7 @@ class UniSurfSampler(Sampler):
         super().__init__()
         self.num_samples_interval = num_samples_interval
         self.num_samples_outside = num_samples_outside
+        self.num_samples_importance = num_samples_importance
         self.num_marching_steps = num_marching_steps
         self.num_secant_steps = num_secant_steps
         self.interval_start = interval_start
@@ -969,6 +971,13 @@ class UniSurfSampler(Sampler):
         # samplers
         self.uniform_sampler = UniformSampler(single_jitter=single_jitter)
         self.outside_sampler = UniformSampler(single_jitter=single_jitter)
+        self.pdf_sampler = PDFSampler(
+            include_original=False,
+            single_jitter=single_jitter,
+            histogram_padding=1e-5,
+        )
+        # for merge samples
+        self.error_bounded_sampler = ErrorBoundedSampler()
 
         # step counter
         self._step = 0
@@ -982,6 +991,7 @@ class UniSurfSampler(Sampler):
     def generate_ray_samples(
         self,
         ray_bundle: Optional[RayBundle] = None,
+        occupancy_fn: Optional[RayBundle] = None,
         sdf_fn: Optional[Callable] = None,
         return_surface_points: bool = False,
     ) -> Union[Tuple[RaySamples, torch.Tensor], RaySamples]:
@@ -994,6 +1004,26 @@ class UniSurfSampler(Sampler):
         with torch.no_grad():
             sdf = sdf_fn(ray_samples)
 
+        # importance sampling
+        occupancy = occupancy_fn(sdf)
+        weights = ray_samples.get_weights_from_alphas(occupancy)
+
+        importance_samples = self.pdf_sampler(
+            ray_bundle,
+            ray_samples,
+            weights,
+            num_samples=self.num_samples_importance,
+        )
+
+        # samples uniformly with near and far
+        ray_samples_uniform_outside = self.outside_sampler(ray_bundle, num_samples=self.num_samples_outside)
+
+        # merge
+        ray_samples_uniform_importance, _ = self.error_bounded_sampler.merge_ray_samples(
+            ray_bundle, importance_samples, ray_samples_uniform_outside
+        )
+
+        # surface points
         # Calculate if sign change occurred and concat 1 (no sign change) in
         # last dimension
         n_rays, n_samples = ray_samples.shape
@@ -1033,11 +1063,7 @@ class UniSurfSampler(Sampler):
         if surface_points.shape[0] <= 0:
             surface_points = torch.rand((1024, 3), device=sdf.device) - 0.5
 
-        # samples uniformly with new surface interval
-        ray_samples_uniform_outside = self.outside_sampler(ray_bundle, num_samples=self.num_samples_outside)
-
         # modify near and far values according current schedule
-
         nears, fars = ray_bundle.nears.clone(), ray_bundle.fars.clone()
         dists = fars - nears
 
@@ -1055,7 +1081,9 @@ class UniSurfSampler(Sampler):
         ray_bundle.fars = fars
 
         # merge sampled points
-        ray_samples = self.merge_ray_samples_in_eculidean(ray_bundle, ray_samples_interval, ray_samples_uniform_outside)
+        ray_samples = self.merge_ray_samples_in_eculidean(
+            ray_bundle, ray_samples_interval, ray_samples_uniform_importance
+        )
 
         # TODO model background?
         # save_points("p1.ply", ray_samples_interval.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
@@ -1063,6 +1091,7 @@ class UniSurfSampler(Sampler):
         #    "p2.ply", ray_samples_uniform_outside.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3)
         # )
         # save_points("p3.ply", ray_samples.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
+        # save_points("p4.ply", importance_samples.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
         # if self._step > 0:
         #    exit(-1)
 

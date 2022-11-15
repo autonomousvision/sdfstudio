@@ -48,6 +48,8 @@ class UniSurfModelConfig(SurfaceModelConfig):
     """Number of uniform samples"""
     num_samples_outside: int = 32
     """Number of samples outside the bounding sphere for backgound"""
+    num_samples_importance: int = 32
+    """Number of important samples"""
     num_marching_steps: int = 256
     """number of up sample step, 1 for simple coarse-to-fine sampling"""
     perturb: bool = True
@@ -70,6 +72,7 @@ class UniSurfModel(SurfaceModel):
         self.sampler = UniSurfSampler(
             num_samples_interval=self.config.num_samples_interval,
             num_samples_outside=self.config.num_samples_outside,
+            num_samples_importance=self.config.num_samples_importance,
             num_marching_steps=self.config.num_marching_steps,
         )
 
@@ -97,7 +100,9 @@ class UniSurfModel(SurfaceModel):
         return callbacks
 
     def get_outputs(self, ray_bundle: RayBundle):
-        ray_samples, surface_points = self.sampler(ray_bundle, sdf_fn=self.field.get_sdf, return_surface_points=True)
+        ray_samples, surface_points = self.sampler(
+            ray_bundle, occupancy_fn=self.field.get_occupancy, sdf_fn=self.field.get_sdf, return_surface_points=True
+        )
         field_outputs = self.field(ray_samples, return_occupancy=True)
         weights = ray_samples.get_weights_from_alphas(field_outputs[FieldHeadNames.OCCUPANCY])
 
@@ -134,7 +139,9 @@ class UniSurfModel(SurfaceModel):
         """
         if self.collider is not None:
             ray_bundle = self.collider(ray_bundle)
-        ray_samples, surface_points = self.sampler(ray_bundle, sdf_fn=self.field.get_sdf, return_surface_points=True)
+        ray_samples, surface_points = self.sampler(
+            ray_bundle, occupancy_fn=self.field.get_occupancy, sdf_fn=self.field.get_sdf, return_surface_points=True
+        )
         field_outputs = self.field(ray_samples, return_occupancy=True)
         weights = ray_samples.get_weights_from_alphas(field_outputs[FieldHeadNames.OCCUPANCY])
         # TODO: warping and other stuff that uses additional inputs
