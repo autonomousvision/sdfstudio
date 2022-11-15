@@ -37,7 +37,6 @@ from nerfstudio.engine.schedulers import ExponentialSchedulerConfig, MultiStepSc
 from nerfstudio.models.base_model import VanillaModelConfig
 from nerfstudio.models.instant_ngp import InstantNGPModelConfig
 from nerfstudio.models.mipnerf import MipNerfModel
-from nerfstudio.models.monosdf import MonoSDFModelConfig
 from nerfstudio.models.neus import NeuSModelConfig
 from nerfstudio.models.volsdf import VolSDFModelConfig
 from nerfstudio.models.nerfacto import NerfactoModelConfig
