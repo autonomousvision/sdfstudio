@@ -46,8 +46,10 @@ class NeuSModelConfig(MonoSDFModelConfig):
     """Number of importance samples"""
     num_samples_outside: int = 32
     """Number of samples outside the bounding sphere for backgound"""
-    num_up_sample_steps = 4
+    num_up_sample_steps: int = 4
     """number of up sample step, 1 for simple coarse-to-fine sampling"""
+    base_variance: float = 64
+    """fixed base variance in NeuS sampler, the inv_s will be base * 2 ** iter during upsample"""
     perturb: bool = True
     """use to use perturb for the sampled points"""
 
@@ -70,6 +72,7 @@ class NeuSModel(MonoSDFModel):
             num_samples_importance=self.config.num_samples_importance,
             num_samples_outside=self.config.num_samples_outside,
             num_upsample_steps=self.config.num_up_sample_steps,
+            base_variance=self.config.base_variance,
         )
 
         self.anneal_end = 50000

@@ -820,6 +820,7 @@ class NeuSSampler(Sampler):
         num_samples_importance: int = 64,
         num_samples_outside: int = 32,
         num_upsample_steps: int = 4,
+        base_variance: float = 64,
         single_jitter: bool = True,
     ) -> None:
         super().__init__()
@@ -827,6 +828,7 @@ class NeuSSampler(Sampler):
         self.num_samples_importance = num_samples_importance
         self.num_samples_outside = num_samples_outside
         self.num_upsample_steps = num_upsample_steps
+        self.base_variance = base_variance
         self.single_jitter = single_jitter
 
         # samplers
@@ -856,8 +858,7 @@ class NeuSSampler(Sampler):
         sorted_index = None
         new_samples = ray_samples
 
-        # TODO make this configurable
-        base_variance = 64
+        base_variance = self.base_variance
 
         while total_iters < self.num_upsample_steps:
 
