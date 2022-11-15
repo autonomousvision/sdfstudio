@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """
-Implementation of NeuS.
+Implementation of VolSDF.
 """
 
 from __future__ import annotations
@@ -24,84 +24,51 @@ from typing import Dict, List, Tuple, Type
 import torch
 from torchtyping import TensorType
 
+
 from nerfstudio.cameras.rays import RayBundle
-from nerfstudio.engine.callbacks import (
-    TrainingCallback,
-    TrainingCallbackAttributes,
-    TrainingCallbackLocation,
-)
 from nerfstudio.field_components.field_heads import FieldHeadNames
+from nerfstudio.model_components.ray_samplers import ErrorBoundedSampler
 from nerfstudio.models.base_surface_model import SurfaceModel, SurfaceModelConfig
-from nerfstudio.model_components.ray_samplers import NeuSSampler
 
 
 @dataclass
-class NeuSModelConfig(SurfaceModelConfig):
-    """NeuS Model Config"""
+class VolSDFModelConfig(SurfaceModelConfig):
+    """VolSDF Model Config"""
 
-    _target: Type = field(default_factory=lambda: NeuSModel)
+    _target: Type = field(default_factory=lambda: VolSDFModel)
     num_samples: int = 64
-    """Number of uniform samples"""
-    num_samples_importance: int = 64
-    """Number of importance samples"""
-    num_samples_outside: int = 32
-    """Number of samples outside the bounding sphere for backgound"""
-    num_up_sample_steps: int = 4
-    """number of up sample step, 1 for simple coarse-to-fine sampling"""
-    base_variance: float = 64
-    """fixed base variance in NeuS sampler, the inv_s will be base * 2 ** iter during upsample"""
-    perturb: bool = True
-    """use to use perturb for the sampled points"""
+    """Number of samples after error bounded sampling"""
+    num_samples_eval: int = 128
+    """Number of samples per iteration used in error bounded sampling"""
+    num_samples_extra: int = 32
+    """Number of uniformly sampled points for training"""
 
 
-class NeuSModel(SurfaceModel):
-    """NeuS model
+class VolSDFModel(SurfaceModel):
+    """VolSDF model
 
     Args:
-        config: NeuS configuration to instantiate model
+        config: MonoSDF configuration to instantiate model
     """
 
-    config: NeuSModelConfig
+    config: VolSDFModelConfig
 
     def populate_modules(self):
         """Set the fields and modules."""
         super().populate_modules()
 
-        self.sampler = NeuSSampler(
+        self.sampler = ErrorBoundedSampler(
             num_samples=self.config.num_samples,
-            num_samples_importance=self.config.num_samples_importance,
-            num_samples_outside=self.config.num_samples_outside,
-            num_upsample_steps=self.config.num_up_sample_steps,
-            base_variance=self.config.base_variance,
+            num_samples_eval=self.config.num_samples_eval,
+            num_samples_extra=self.config.num_samples_extra,
         )
 
-        self.anneal_end = 50000
-
-    def get_training_callbacks(
-        self, training_callback_attributes: TrainingCallbackAttributes
-    ) -> List[TrainingCallback]:
-        callbacks = []
-        # anneal for cos in NeuS
-        if self.anneal_end > 0:
-
-            def set_anneal(step):
-                anneal = min([1.0, step / self.anneal_end])
-                self.field.set_cos_anneal_ratio(anneal)
-
-            callbacks.append(
-                TrainingCallback(
-                    where_to_run=[TrainingCallbackLocation.BEFORE_TRAIN_ITERATION],
-                    update_every_num_iters=1,
-                    func=set_anneal,
-                )
-            )
-
-        return callbacks
-
     def get_outputs(self, ray_bundle: RayBundle):
-        ray_samples = self.sampler(ray_bundle, sdf_fn=self.field.get_sdf)
-        field_outputs = self.field(ray_samples, return_alphas=True)
-        weights = ray_samples.get_weights_from_alphas(field_outputs[FieldHeadNames.ALPHA])
+        ray_samples, eik_points = self.sampler(
+            ray_bundle, density_fn=self.field.laplace_density, sdf_fn=self.field.get_sdf
+        )
+        field_outputs = self.field(ray_samples)
+        weights = ray_samples.get_weights(field_outputs[FieldHeadNames.DENSITY])
 
         rgb = self.renderer_rgb(rgb=field_outputs[FieldHeadNames.RGB], weights=weights)
         depth = self.renderer_depth(weights=weights, ray_samples=ray_samples)
@@ -114,7 +81,7 @@ class NeuSModel(SurfaceModel):
         outputs = {"rgb": rgb, "accumulation": accumulation, "depth": depth, "normal": normal}
 
         if self.training:
-            grad_points = field_outputs[FieldHeadNames.GRADIENT]
+            grad_points = self.field.gradient(eik_points)
             outputs.update({"eik_grad": grad_points})
 
         return outputs
@@ -130,9 +97,11 @@ class NeuSModel(SurfaceModel):
         """
         if self.collider is not None:
             ray_bundle = self.collider(ray_bundle)
-        ray_samples = self.sampler(ray_bundle, sdf_fn=self.field.get_sdf)
-        field_outputs = self.field(ray_samples, return_alphas=True)
-        weights = ray_samples.get_weights_from_alphas(field_outputs[FieldHeadNames.ALPHA])
+        ray_samples, eik_points = self.sampler(
+            ray_bundle, density_fn=self.field.laplace_density, sdf_fn=self.field.get_sdf
+        )
+        field_outputs = self.field(ray_samples)
+        weights = ray_samples.get_weights(field_outputs[FieldHeadNames.DENSITY])
         # TODO: warping and other stuff that uses additional inputs
 
         rgb = self.renderer_rgb(rgb=field_outputs[FieldHeadNames.RGB], weights=weights)
@@ -160,7 +129,7 @@ class NeuSModel(SurfaceModel):
             outputs.update({"patches": warped_patches, "patches_valid_mask": valid_mask})
 
         if self.training:
-            grad_points = field_outputs[FieldHeadNames.GRADIENT]
+            grad_points = self.field.gradient(eik_points)
             outputs.update({"eik_grad": grad_points})
 
         return outputs
@@ -171,7 +140,7 @@ class NeuSModel(SurfaceModel):
         metrics_dict["psnr"] = self.psnr(outputs["rgb"], image)
         if self.training:
             # training statics
-            metrics_dict["s_val"] = self.field.deviation_network.get_variance().item()
-            metrics_dict["inv_s"] = 1.0 / self.field.deviation_network.get_variance().item()
+            metrics_dict["beta"] = self.field.laplace_density.get_beta().item()
+            metrics_dict["alpha"] = 1.0 / self.field.laplace_density.get_beta().item()
 
         return metrics_dict

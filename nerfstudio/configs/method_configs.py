@@ -39,6 +39,7 @@ from nerfstudio.models.instant_ngp import InstantNGPModelConfig
 from nerfstudio.models.mipnerf import MipNerfModel
 from nerfstudio.models.monosdf import MonoSDFModelConfig
 from nerfstudio.models.neus import NeuSModelConfig
+from nerfstudio.models.volsdf import VolSDFModelConfig
 from nerfstudio.models.nerfacto import NerfactoModelConfig
 from nerfstudio.models.semantic_nerfw import SemanticNerfWModelConfig
 from nerfstudio.models.vanilla_nerf import NeRFModel
@@ -82,7 +83,7 @@ method_configs["neuralwarp"] = Config(
                 mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
             ),
         ),
-        model=MonoSDFModelConfig(patch_warp_loss_mult=0.1, eval_num_rays_per_chunk=1024),
+        model=VolSDFModelConfig(patch_warp_loss_mult=0.1, eval_num_rays_per_chunk=1024),
     ),
     optimizers={
         "fields": {
@@ -115,7 +116,7 @@ method_configs["geo-volsdf"] = Config(
                 mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
             ),
         ),
-        model=MonoSDFModelConfig(patch_warp_loss_mult=0.1, eval_num_rays_per_chunk=1024),
+        model=VolSDFModelConfig(patch_warp_loss_mult=0.1, eval_num_rays_per_chunk=1024),
     ),
     optimizers={
         "fields": {
@@ -148,7 +149,7 @@ method_configs["monosdf"] = Config(
                 mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
             ),
         ),
-        model=MonoSDFModelConfig(mono_depth_loss_mult=0.1, mono_normal_loss_mult=0.05, eval_num_rays_per_chunk=1024),
+        model=VolSDFModelConfig(mono_depth_loss_mult=0.1, mono_normal_loss_mult=0.05, eval_num_rays_per_chunk=1024),
     ),
     optimizers={
         "fields": {
@@ -179,7 +180,7 @@ method_configs["volsdf"] = Config(
                 mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
             ),
         ),
-        model=MonoSDFModelConfig(eval_num_rays_per_chunk=1024),
+        model=VolSDFModelConfig(eval_num_rays_per_chunk=1024),
     ),
     optimizers={
         "fields": {
