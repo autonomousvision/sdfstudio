@@ -349,6 +349,11 @@ class SDFField(Field):
         alpha = ((p + 1e-5) / (c + 1e-5)).clip(0.0, 1.0)
         return alpha
 
+    def get_occupancy(self, sdf):
+        """compute occupancy as in UniSurf"""
+        occupancy = self.sigmoid(-10.0 * sdf)
+        return occupancy
+
     def get_colors(self, points, directions, normals, geo_features, camera_indices):
         """compute colors"""
         d = self.direction_encoding(directions)
@@ -391,7 +396,7 @@ class SDFField(Field):
         rgb = self.sigmoid(h)
         return rgb
 
-    def get_outputs(self, ray_samples: RaySamples, return_alphas=False):
+    def get_outputs(self, ray_samples: RaySamples, return_alphas=False, return_occupancy=False):
         """compute output of ray samples"""
         if ray_samples.camera_indices is None:
             raise AttributeError("Camera indices are not provided.")
@@ -439,13 +444,17 @@ class SDFField(Field):
             alphas = self.get_alpha(ray_samples, sdf, gradients)
             outputs.update({FieldHeadNames.ALPHA: alphas, FieldHeadNames.GRADIENT: gradients})
 
+        if return_occupancy:
+            occupancy = self.get_occupancy(sdf)
+            outputs.update({FieldHeadNames.OCCUPANCY: occupancy, FieldHeadNames.GRADIENT: gradients})
+
         return outputs
 
-    def forward(self, ray_samples: RaySamples, return_alphas=False):
+    def forward(self, ray_samples: RaySamples, return_alphas=False, return_occupancy=False):
         """Evaluates the field at points along the ray.
 
         Args:
             ray_samples: Samples to evaluate field on.
         """
-        field_outputs = self.get_outputs(ray_samples, return_alphas=return_alphas)
+        field_outputs = self.get_outputs(ray_samples, return_alphas=return_alphas, return_occupancy=return_occupancy)
         return field_outputs

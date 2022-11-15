@@ -19,6 +19,7 @@ Collection of sampling strategies
 from abc import abstractmethod
 from typing import Callable, List, Optional, Tuple, Union
 
+import math
 import nerfacc
 import torch
 from nerfacc import OccupancyGrid
@@ -111,7 +112,7 @@ class SpacedSampler(Sampler):
             bin_lower = torch.cat([bins[..., :1], bin_centers], -1)
             bins = bin_lower + (bin_upper - bin_lower) * t_rand
 
-        s_near, s_far = (self.spacing_fn(x) for x in (ray_bundle.nears, ray_bundle.fars))
+        s_near, s_far = (self.spacing_fn(x) for x in (ray_bundle.nears.clone(), ray_bundle.fars.clone()))
         spacing_to_euclidean_fn = lambda x: self.spacing_fn_inv(x * s_far + (1 - x) * s_near)
         euclidean_bins = spacing_to_euclidean_fn(bins)  # [num_rays, num_samples+1]
 
@@ -939,3 +940,178 @@ class NeuSSampler(Sampler):
         alpha = (prev_cdf - next_cdf + 1e-5) / (prev_cdf + 1e-5)
 
         return alpha
+
+
+class UniSurfSampler(Sampler):
+    """NeuS sampler that uses a sdf network to generate samples with fixed variance value in each iterations."""
+
+    def __init__(
+        self,
+        num_samples_interval: int = 64,
+        num_samples_outside: int = 32,
+        num_marching_steps: int = 256,
+        num_secant_steps: int = 8,
+        interval_start: float = 0.25,
+        interval_end: float = 0.0125,
+        interval_decay: float = 0.00005,  # default value is 0.000015 and will reach the end value at 200K while 0.00005 will reach the end at 60K iter
+        single_jitter: bool = False,
+    ) -> None:
+        super().__init__()
+        self.num_samples_interval = num_samples_interval
+        self.num_samples_outside = num_samples_outside
+        self.num_marching_steps = num_marching_steps
+        self.num_secant_steps = num_secant_steps
+        self.interval_start = interval_start
+        self.interval_end = interval_end
+        self.interval_decay = interval_decay
+        self.single_jitter = single_jitter
+
+        # samplers
+        self.uniform_sampler = UniformSampler(single_jitter=single_jitter)
+        self.outside_sampler = UniformSampler(single_jitter=single_jitter)
+
+        # step counter
+        self._step = 0
+        self.delta = self.interval_start
+
+    def step_cb(self, step):
+        """Callback to register a training step has passed. This is used to keep track of the sampling schedule"""
+        self._step = step
+        self.delta = max(self.interval_start * math.exp(-1 * self.interval_decay * self._step), self.interval_end)
+
+    def generate_ray_samples(
+        self,
+        ray_bundle: Optional[RayBundle] = None,
+        sdf_fn: Optional[Callable] = None,
+        return_surface_points: bool = False,
+    ) -> Union[Tuple[RaySamples, torch.Tensor], RaySamples]:
+        assert ray_bundle is not None
+        assert sdf_fn is not None
+
+        # Start with uniform sampling
+        ray_samples = self.uniform_sampler(ray_bundle, num_samples=self.num_marching_steps)
+
+        with torch.no_grad():
+            sdf = sdf_fn(ray_samples)
+
+        # Calculate if sign change occurred and concat 1 (no sign change) in
+        # last dimension
+        n_rays, n_samples = ray_samples.shape
+        starts = ray_samples.frustums.starts
+        sign_matrix = torch.cat(
+            [torch.sign(sdf[:, :-1, 0] * sdf[:, 1:, 0]), torch.ones(n_rays, 1).to(sdf.device)], dim=-1
+        )
+        cost_matrix = sign_matrix * torch.arange(n_samples, 0, -1).float().to(sdf.device)
+
+        # Get first sign change and mask for values where a.) a sign changed
+        # occurred and b.) no a neg to pos sign change occurred (meaning from
+        # inside surface to outside)
+        values, indices = torch.min(cost_matrix, -1)
+        mask_sign_change = values < 0
+        mask_pos_to_neg = sdf[torch.arange(n_rays), indices, 0] > 0
+
+        # Define mask where a valid depth value is found
+        mask = mask_sign_change & mask_pos_to_neg
+
+        # Get depth values and function values for the interval
+        d_low = starts[torch.arange(n_rays), indices, 0][mask]
+        v_low = sdf[torch.arange(n_rays), indices, 0][mask]
+
+        indices = torch.clamp(indices + 1, max=n_samples - 1)
+        d_high = starts[torch.arange(n_rays), indices, 0][mask]
+        v_high = sdf[torch.arange(n_rays), indices, 0][mask]
+
+        # TODO secant method
+        # linear-interpolations
+        z = (v_low * d_high - v_high * d_low) / (v_low - v_high)
+
+        # make this simpler
+        origins = ray_samples.frustums.origins[torch.arange(n_rays), indices, :][mask]
+        directions = ray_samples.frustums.directions[torch.arange(n_rays), indices, :][mask]
+        surface_points = origins + directions * z[..., None]
+
+        if surface_points.shape[0] <= 0:
+            surface_points = torch.rand((1024, 3), device=sdf.device) - 0.5
+
+        # samples uniformly with new surface interval
+        ray_samples_uniform_outside = self.outside_sampler(ray_bundle, num_samples=self.num_samples_outside)
+
+        # modify near and far values according current schedule
+
+        nears, fars = ray_bundle.nears.clone(), ray_bundle.fars.clone()
+        dists = fars - nears
+
+        ray_bundle.nears[mask] = z[:, None] - dists[mask] * self.delta
+        ray_bundle.fars[mask] = z[:, None] + dists[mask] * self.delta
+        # min max bound
+        ray_bundle.nears = torch.maximum(ray_bundle.nears, nears)
+        ray_bundle.fars = torch.minimum(ray_bundle.fars, fars)
+
+        # samples uniformly with new surface interval
+        ray_samples_interval = self.uniform_sampler(ray_bundle, num_samples=self.num_samples_interval)
+
+        # change back to original values
+        ray_bundle.nears = nears
+        ray_bundle.fars = fars
+
+        # merge sampled points
+        ray_samples = self.merge_ray_samples_in_eculidean(ray_bundle, ray_samples_interval, ray_samples_uniform_outside)
+
+        # TODO model background?
+        # save_points("p1.ply", ray_samples_interval.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
+        # save_points(
+        #    "p2.ply", ray_samples_uniform_outside.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3)
+        # )
+        # save_points("p3.ply", ray_samples.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
+        # if self._step > 0:
+        #    exit(-1)
+
+        if return_surface_points:
+            return ray_samples, surface_points
+
+        return ray_samples
+
+    def merge_ray_samples_in_eculidean(
+        self, ray_bundle: RayBundle, ray_samples_1: RaySamples, ray_samples_2: RaySamples
+    ):
+        """Merge two set of ray samples and return sorted index which can be used to merge sdf values
+
+        Args:
+            ray_samples_1 : ray_samples to merge
+            ray_samples_2 : ray_samples to merge
+        """
+        starts_1 = ray_samples_1.spacing_to_euclidean_fn(ray_samples_1.spacing_starts[..., 0])
+        starts_2 = ray_samples_2.spacing_to_euclidean_fn(ray_samples_2.spacing_starts[..., 0])
+
+        end_1 = ray_samples_1.spacing_to_euclidean_fn(ray_samples_1.spacing_ends[:, -1:, 0])
+        end_2 = ray_samples_2.spacing_to_euclidean_fn(ray_samples_2.spacing_ends[:, -1:, 0])
+
+        end = torch.maximum(end_1, end_2)
+
+        euclidean_bins, _ = torch.sort(torch.cat([starts_1, starts_2], -1), -1)
+
+        euclidean_bins = torch.cat([euclidean_bins, end], dim=-1)
+
+        # Stop gradients
+        euclidean_bins = euclidean_bins.detach()
+
+        # TODO convert euclidean bins to spacing bins
+        bins = euclidean_bins
+
+        ray_samples = ray_bundle.get_ray_samples(
+            bin_starts=euclidean_bins[..., :-1, None],
+            bin_ends=euclidean_bins[..., 1:, None],
+            spacing_starts=bins[..., :-1, None],
+            spacing_ends=bins[..., 1:, None],
+            spacing_to_euclidean_fn=ray_samples_1.spacing_to_euclidean_fn,
+        )
+
+        return ray_samples
+
+    def secant_method(
+        self,
+        ray_bundle: Optional[RayBundle] = None,
+        sdf_fn: Optional[Callable] = None,
+    ):
+        """run secant method to refine surface points"""
+        raise NotImplementedError
