@@ -63,7 +63,13 @@ class DataparserOutputs:
     """Monocular depth."""
     normals: Optional[torch.Tensor] = None
     """Monocular normal."""
-
+    additional_inputs: Dict[str, Any] = to_immutable_dict({})
+    """Dictionary of additional dataset information (e.g. semantics/point clouds/masks).
+    {input_name:
+    ... {"func": function to process additional dataparser outputs,
+    ... "kwargs": dictionary of data to pass into "func"}
+    }
+    """
     metadata: Dict[str, Any] = to_immutable_dict({})
     """Dictionary of any metadata that be required for the given experiment.
     Will be processed by the InputDataset to create any additional tensors that may be required.

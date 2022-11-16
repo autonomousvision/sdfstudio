@@ -48,7 +48,12 @@ def collate_image_dataset_batch(batch: Dict, num_rays_per_batch: int, keep_full_
         ).long()
 
     c, y, x = (i.flatten() for i in torch.split(indices, 1, dim=-1))
-    collated_batch = {key: value[c, y, x] for key, value in batch.items() if key != "image_idx" and value is not None}
+
+    collated_batch = {
+        key: value[c, y, x]
+        for key, value in batch.items()
+        if key not in ("image_idx", "src_imgs", "src_idxs") and value is not None
+    }
 
     assert collated_batch["image"].shape == (num_rays_per_batch, 3), collated_batch["image"].shape
 

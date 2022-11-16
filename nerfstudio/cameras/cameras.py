@@ -441,4 +441,5 @@ class Cameras:
             width=self._image_widths[indices],
             distortion_params=self.distortion_params[indices] if self.distortion_params else None,
             camera_type=self.camera_type[indices],
+            times=self.times[indices] if self.times is not None else None,
         )
