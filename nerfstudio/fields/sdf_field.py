@@ -16,9 +16,8 @@
 Field for compound nerf model, adds scene contraction and image embeddings to instant ngp
 """
 
-
-from typing import Optional, Union, Type
 from dataclasses import dataclass, field
+from typing import Optional, Type, Union
 
 import numpy as np
 import torch
@@ -59,6 +58,33 @@ class LaplaceDensity(nn.Module):  # alpha * Laplace(loc=0, scale=beta).cdf(-sdf)
 
         alpha = 1.0 / beta
         return alpha * (0.5 + 0.5 * sdf.sign() * torch.expm1(-sdf.abs() / beta))
+
+    def get_beta(self):
+        """return current beta value"""
+        beta = self.beta.abs() + self.beta_min
+        return beta
+
+
+class SigmoidDensity(nn.Module):  # alpha * Laplace(loc=0, scale=beta).cdf(-sdf)
+    """Sigmoid density from VolSDF"""
+
+    def __init__(self, init_val, beta_min=0.0001):
+        super().__init__()
+        self.beta_min = torch.tensor(beta_min).cuda()
+        self.register_parameter("beta", nn.Parameter(init_val * torch.ones(1), requires_grad=True))
+
+    def forward(
+        self, sdf: TensorType["bs":...], beta: Union[TensorType["bs":...], None] = None
+    ) -> TensorType["bs":...]:
+        """convert sdf value to density value with beta, if beta is missing, then use learable beta"""
+
+        if beta is None:
+            beta = self.get_beta()
+
+        alpha = 1.0 / beta
+
+        # negtive sdf will have large density
+        return alpha * torch.sigmoid(-sdf * alpha)
 
     def get_beta(self):
         """return current beta value"""
@@ -226,6 +252,7 @@ class SDFField(Field):
 
         # laplace function for transform sdf to density from VolSDF
         self.laplace_density = LaplaceDensity(init_val=self.config.beta_init)
+        # self.laplace_density = SigmoidDensity(init_val=self.config.beta_init)
 
         # TODO use different name for beta_init for config
         # deviation_network to compute alpha from sdf from NeuS
@@ -347,6 +374,13 @@ class SDFField(Field):
         c = prev_cdf
 
         alpha = ((p + 1e-5) / (c + 1e-5)).clip(0.0, 1.0)
+
+        # HF-NeuS
+        # # sigma
+        # cdf = torch.sigmoid(sdf * inv_s)
+        # e = inv_s * (1 - cdf) * (-iter_cos) * ray_samples.deltas
+        # alpha = (1 - torch.exp(-e)).clip(0.0, 1.0)
+
         return alpha
 
     def get_occupancy(self, sdf):
