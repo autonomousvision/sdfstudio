@@ -48,40 +48,13 @@ def collate_image_dataset_batch(batch: Dict, num_rays_per_batch: int, keep_full_
         ).long()
 
     c, y, x = (i.flatten() for i in torch.split(indices, 1, dim=-1))
-    image = batch["image"][c, y, x]
-    mask, semantics_stuff, semantics_thing = None, None, None
-    depth, normal = None, None
-    if "mask" in batch:
-        mask = batch["mask"][c, y, x]
-    if "semantics_stuff" in batch:
-        semantics_stuff = batch["semantics_stuff"][c, y, x]
-    if "semantics_thing" in batch:
-        semantics_thing = batch["semantics_thing"][c, y, x]
-    if "depth" in batch:
-        depth = batch["depth"][c, y, x]
-    if "normal" in batch:
-        normal = batch["normal"][c, y, x]
+    collated_batch = {key: value[c, y, x] for key, value in batch.items() if key != "image_idx" and value is not None}
 
-    assert image.shape == (num_rays_per_batch, 3), image.shape
+    assert collated_batch["image"].shape == (num_rays_per_batch, 3), collated_batch["image"].shape
 
     # Needed to correct the random indices to their actual camera idx locations.
-    local_indices = indices.clone()
     indices[:, 0] = batch["image_idx"][c]
-    collated_batch = {
-        "local_indices": local_indices,  # local to the batch returned
-        "indices": indices,  # with the abs camera indices
-        "image": image,
-    }
-    if mask is not None:
-        collated_batch["mask"] = mask
-    if semantics_stuff is not None:
-        collated_batch["semantics_stuff"] = semantics_stuff
-    if semantics_thing is not None:
-        collated_batch["semantics_thing"] = semantics_thing
-    if depth is not None:
-        collated_batch["depth"] = depth
-    if normal is not None:
-        collated_batch["normal"] = normal
+    collated_batch["indices"] = indices  # with the abs camera indices
 
     if keep_full_image:
         collated_batch["full_image"] = batch["image"]

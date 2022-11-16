@@ -176,6 +176,7 @@ data
 # Misc
 old/
 temp*
+!temporal*
 .nfs*
 external/
 __MACOSX/
@@ -186,5 +187,6 @@ cache/
 renders/
 package-lock.json
 camera_paths/
+
 ._.DS_Store
 .DS_Store

@@ -32,7 +32,8 @@ def download_blender(save_dir: Path):
     unzip_path = save_dir / Path("nerf_synthetic")
     final_path = save_dir / Path("blender")
     unzip_path.rename(final_path)
-    download_path.unlink(missing_ok=True)
+    if download_path.exists():
+        download_path.unlink()
 
 
 def download_friends(save_dir: Path):
@@ -64,7 +65,6 @@ nerfstudio_file_ids = {
     "library": grab_file_id("https://drive.google.com/file/d/1Hjbh_-BuaWETQExn2x2qGD74UwrFugHx/view?usp=sharing"),
     "poster": grab_file_id("https://drive.google.com/file/d/1dmjWGXlJnUxwosN6MVooCDQe970PkD-1/view?usp=sharing"),
     "redwoods2": grab_file_id("https://drive.google.com/file/d/1rg-4NoXT8p6vkmbWxMOY6PSG4j3rfcJ8/view?usp=sharing"),
-    "sf_street": grab_file_id("https://drive.google.com/file/d/1DbLyptL6my2QprEVtYuW2uzgp9JAK5Wz/view?usp=sharing"),
     "storefront": grab_file_id("https://drive.google.com/file/d/16b792AguPZWDA_YC4igKCwXJqW0Tb21o/view?usp=sharing"),
     "vegetation": grab_file_id("https://drive.google.com/file/d/1wBhLQ2odycrtU39y2akVurXEAt9SsVI3/view?usp=sharing"),
 }
@@ -123,7 +123,8 @@ def download_dnerf(save_dir: Path):
     unzip_path = save_dir / Path("data")
     final_path = save_dir / Path("dnerf")
     unzip_path.rename(final_path)
-    download_path.unlink(missing_ok=True)
+    if download_path.exists():
+        download_path.unlink()
 
 
 def main(
