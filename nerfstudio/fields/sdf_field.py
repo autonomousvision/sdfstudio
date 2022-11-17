@@ -129,6 +129,8 @@ class SDFFieldConfig(FieldConfig):
     """Number of hidden dimension of color network"""
     appearance_embedding_dim: int = 32
     """Dimension of appearance embedding"""
+    use_appearance_embedding: bool = False
+    """Dimension of appearance embedding"""
     bias: float = 0.8
     """sphere size of geometric initializaion"""
     geometric_init: bool = True
@@ -392,12 +394,12 @@ class SDFField(Field):
         """compute colors"""
         d = self.direction_encoding(directions)
 
-        # TODO make appearance embedding optional
         # appearance
         if self.training:
             embedded_appearance = self.embedding_appearance(camera_indices)
-            # TODO fake embedding here
-            embedded_appearance = torch.zeros_like(embedded_appearance)
+            # set it to zero if don't use it
+            if not self.config.use_appearance_embedding:
+                embedded_appearance = torch.zeros_like(embedded_appearance)
         else:
             if self.use_average_appearance_embedding:
                 embedded_appearance = torch.ones(
