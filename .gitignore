@@ -190,3 +190,6 @@ camera_paths/
 
 ._.DS_Store
 .DS_Store
+
+.vscode/settings.json
+

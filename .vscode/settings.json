@@ -123,10 +123,12 @@
   "python.analysis.typeCheckingMode": "basic",
   "python.analysis.diagnosticMode": "workspace",
   "python.analysis.diagnosticSeverityOverrides": {
-      "reportGeneralTypeIssues": "none",
-      "reportUnboundVariable": "none",
-      "reportOptionalMemberAccess": "none",
-      "reportOptionalSubscript": "none",
-      "reportOptionalCall": "none",
-  }
+    "reportGeneralTypeIssues": "none",
+    "reportUnboundVariable": "none",
+    "reportOptionalMemberAccess": "none",
+    "reportOptionalSubscript": "none",
+    "reportOptionalCall": "none"
+  },
+  "python.languageServer": "Pylance",
+  "python.defaultInterpreterPath": "/home/yuzh/anaconda3/envs/monosdf/bin/python"
 }
