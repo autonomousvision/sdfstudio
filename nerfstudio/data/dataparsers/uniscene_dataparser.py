@@ -283,7 +283,8 @@ class UniScene(DataParser):
             camera_type=CameraType.PERSPECTIVE,
         )
 
-        cameras.rescale_output_resolution(scaling_factor=1.0 / self.config.downscale_factor)
+        # TODO fix later
+        # cameras.rescale_output_resolution(scaling_factor=1.0 / self.config.downscale_factor)
 
         additional_inputs_dict = {
             "cues": {"func": get_depths_and_normals, "kwargs": {"depths": depth_images, "normals": normal_images}}

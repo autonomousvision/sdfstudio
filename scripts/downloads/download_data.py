@@ -133,14 +133,11 @@ def main(
     save_dir: Path = Path("data/"),
 ):
     """Script to download existing datasets.
-
     We currently support the following datasets:
-
     - nerfstudio: Growing collection of real-world scenes. Use the `capture_name` argument to specify
         which capture to download.
     - blender: Blender synthetic scenes realeased with NeRF.
     - friends: Friends TV show scenes.
-
     Args:
         dataset: The dataset to download (from).
         capture_name: The capture name to download (if downloading from nerfstudio dataset).

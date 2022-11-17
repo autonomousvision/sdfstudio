@@ -187,6 +187,8 @@ class PatchWarping(nn.Module):
 
         device = sdf.device
 
+        cameras = cameras.to(device)
+
         # filter out the patches that are outside the boarder of image
         in_image_mask = (
             (pix_indices[:, 0] > self.patch_size // 2)
@@ -215,8 +217,8 @@ class PatchWarping(nn.Module):
         warped_indices = warped_indices[:, :, :2, :] / warped_indices[:, :, 2:, :]
 
         pix_coords = warped_indices.permute(0, 1, 3, 2).contiguous()  # [..., :2]
-        pix_coords[..., 0] /= cameras.image_width[:, None, None].to(device) - 1
-        pix_coords[..., 1] /= cameras.image_height[:, None, None].to(device) - 1
+        pix_coords[..., 0:1] /= cameras.image_width[:, None, None].to(device) - 1
+        pix_coords[..., 1:2] /= cameras.image_height[:, None, None].to(device) - 1
         pix_coords = (pix_coords - 0.5) * 2
 
         # valid

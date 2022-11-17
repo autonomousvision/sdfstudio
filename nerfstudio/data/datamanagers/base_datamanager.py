@@ -42,9 +42,12 @@ from nerfstudio.data.dataparsers.instant_ngp_dataparser import (
 )
 from nerfstudio.data.dataparsers.nerfstudio_dataparser import NerfstudioDataParserConfig
 from nerfstudio.data.dataparsers.nuscenes_dataparser import NuScenesDataParserConfig
+from nerfstudio.data.dataparsers.phototourism_dataparser import (
+    PhototourismDataParserConfig,
+)
 from nerfstudio.data.dataparsers.record3d_dataparser import Record3DDataParserConfig
 from nerfstudio.data.dataparsers.uniscene_dataparser import UniSceneDataParserConfig
-from nerfstudio.data.datasets.base_dataset import InputDataset
+from nerfstudio.data.datasets.base_dataset import GeneralizedDataset, InputDataset
 from nerfstudio.data.pixel_samplers import PixelSampler
 from nerfstudio.data.utils.dataloaders import (
     CacheDataloader,
@@ -53,6 +56,7 @@ from nerfstudio.data.utils.dataloaders import (
 )
 from nerfstudio.engine.callbacks import TrainingCallback, TrainingCallbackAttributes
 from nerfstudio.model_components.ray_generators import RayGenerator
+from nerfstudio.utils.images import BasicImages
 from nerfstudio.utils.misc import IterableWrapper
 
 CONSOLE = Console(width=120)
@@ -68,6 +72,7 @@ AnnotatedDataParserUnion = tyro.conf.OmitSubcommandPrefixes[  # Omit prefixes of
             "record3d-data": Record3DDataParserConfig(),
             "dnerf-data": DNeRFDataParserConfig(),
             "uniscene-data": UniSceneDataParserConfig(),
+            "phototourism-data": PhototourismDataParserConfig(),
         },
         prefix_names=False,  # Omit prefixes in subcommands themselves.
     )
@@ -310,11 +315,13 @@ class VanillaDataManager(DataManager):  # pylint: disable=abstract-method
 
     def create_train_dataset(self) -> InputDataset:
         """Sets up the data loaders for training"""
-        return InputDataset(self.config.dataparser.setup().get_dataparser_outputs(split="train"))
+        return GeneralizedDataset(self.config.dataparser.setup().get_dataparser_outputs(split="train"))
 
     def create_eval_dataset(self) -> InputDataset:
         """Sets up the data loaders for evaluation"""
-        return InputDataset(self.config.dataparser.setup().get_dataparser_outputs(split=self.test_split))
+        return GeneralizedDataset(
+            self.config.dataparser.setup().get_dataparser_outputs(split="val" if not self.test_mode else "test")
+        )
 
     def setup_train(self):
         """Sets up the data loaders for training"""
@@ -390,6 +397,9 @@ class VanillaDataManager(DataManager):  # pylint: disable=abstract-method
     def next_eval_image(self, step: int) -> Tuple[int, RayBundle, Dict]:
         for camera_ray_bundle, batch in self.eval_dataloader:
             assert camera_ray_bundle.camera_indices is not None
+            if isinstance(batch["image"], BasicImages):  # If this is a generalized dataset, we need to get image tensor
+                batch["image"] = batch["image"].images[0]
+                camera_ray_bundle = camera_ray_bundle.reshape((*batch["image"].shape[:-1], 1))
             image_idx = int(camera_ray_bundle.camera_indices[0, 0, 0])
             return image_idx, camera_ray_bundle, batch
         raise ValueError("No more eval images")
