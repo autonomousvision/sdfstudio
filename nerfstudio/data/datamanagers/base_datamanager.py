@@ -356,6 +356,7 @@ class VanillaDataManager(DataManager):  # pylint: disable=abstract-method
             device=self.device,
             num_workers=self.world_size * 2,
             pin_memory=True,
+            shuffle=False,
         )
         self.iter_eval_image_dataloader = iter(self.eval_image_dataloader)
         self.eval_pixel_sampler = PixelSampler(self.config.eval_num_rays_per_batch)
@@ -368,12 +369,14 @@ class VanillaDataManager(DataManager):  # pylint: disable=abstract-method
             input_dataset=self.eval_dataset,
             device=self.device,
             num_workers=self.world_size * 2,
+            shuffle=False,
         )
         self.eval_dataloader = RandIndicesEvalDataloader(
             input_dataset=self.eval_dataset,
             image_indices=self.config.eval_image_indices,
             device=self.device,
             num_workers=self.world_size * 2,
+            shuffle=False,
         )
 
     def next_train(self, step: int) -> Tuple[RayBundle, Dict]:

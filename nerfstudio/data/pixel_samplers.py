@@ -90,18 +90,22 @@ def collate_image_dataset_batch_list(batch: Dict, num_rays_per_batch: int, keep_
     # only sample within the mask, if the mask is in the batch
     all_indices = []
     all_images = []
+    all_skys = []
 
     if "mask" in batch:
         num_rays_in_batch = num_rays_per_batch // num_images
         for i in range(num_images):
             if i == num_images - 1:
                 num_rays_in_batch = num_rays_per_batch - (num_images - 1) * num_rays_in_batch
-            nonzero_indices = torch.nonzero(batch["mask"][i][..., 0], as_tuple=False)
+            # nonzero_indices = torch.nonzero(batch["mask"][i][..., 0], as_tuple=False)
+            nonzero_indices = batch["mask"][i]
+
             chosen_indices = random.sample(range(len(nonzero_indices)), k=num_rays_in_batch)
             indices = nonzero_indices[chosen_indices]
             indices = torch.cat([torch.full((num_rays_in_batch, 1), i, device=device), indices], dim=-1)
             all_indices.append(indices)
             all_images.append(batch["image"][i][indices[:, 1], indices[:, 2]])
+            all_skys.append(batch["sky"][i][indices[:, 1], indices[:, 2]])
 
     else:
         num_rays_in_batch = num_rays_per_batch // num_images
@@ -116,6 +120,7 @@ def collate_image_dataset_batch_list(batch: Dict, num_rays_per_batch: int, keep_
             indices[:, 0] = i
             all_indices.append(indices)
             all_images.append(batch["image"][i][indices[:, 1], indices[:, 2]])
+            all_skys.append(batch["sky"][i][indices[:, 1], indices[:, 2]])
 
     indices = torch.cat(all_indices, dim=0)
 
@@ -123,10 +128,11 @@ def collate_image_dataset_batch_list(batch: Dict, num_rays_per_batch: int, keep_
     collated_batch = {
         key: value[c, y, x]
         for key, value in batch.items()
-        if key != "image_idx" and key != "image" and key != "mask" and value is not None
+        if key != "image_idx" and key != "image" and key != "mask" and key != "sky" and value is not None
     }
 
     collated_batch["image"] = torch.cat(all_images, dim=0)
+    collated_batch["sky"] = torch.cat(all_skys, dim=0)
 
     assert collated_batch["image"].shape == (num_rays_per_batch, 3), collated_batch["image"].shape
 
@@ -171,6 +177,8 @@ class PixelSampler:  # pylint: disable=too-few-public-methods
             image_batch["image"] = image_batch["image"].images
             if "mask" in image_batch:
                 image_batch["mask"] = image_batch["mask"].images
+            if "sky" in image_batch:
+                image_batch["sky"] = image_batch["sky"].images
             pixel_batch = collate_image_dataset_batch_list(
                 image_batch, self.num_rays_per_batch, keep_full_image=self.keep_full_image
             )

@@ -22,6 +22,7 @@ from typing import Type
 
 import numpy as np
 import torch
+import yaml
 from rich.progress import Console
 from typing_extensions import Literal
 
@@ -34,8 +35,27 @@ from nerfstudio.data.dataparsers.base_dataparser import (
 )
 from nerfstudio.data.scene_box import SceneBox
 from nerfstudio.data.utils.colmap_utils import read_cameras_binary, read_images_binary
+from nerfstudio.utils.images import BasicImages
 
 CONSOLE = Console(width=120)
+
+
+def get_masks(image_idx: int, masks, skys):
+    """function to process additional mask information
+
+    Args:
+        image_idx: specific image index to work with
+        mask: mask data
+    """
+
+    # mask
+    mask = masks[image_idx]
+    mask = BasicImages([mask])
+
+    # sky
+    sky = skys[image_idx]
+    sky = BasicImages([sky])
+    return {"mask": mask, "sky": sky}
 
 
 @dataclass
@@ -80,6 +100,11 @@ class Phototourism(DataParser):
     # pylint: disable=too-many-statements
     def _generate_dataparser_outputs(self, split="train"):
 
+        config_path = self.data / "config.yaml"
+
+        with open(config_path, "r") as yamlfile:
+            scene_config = yaml.load(yamlfile, Loader=yaml.FullLoader)
+
         image_filenames = []
         poses = []
 
@@ -93,6 +118,10 @@ class Phototourism(DataParser):
         cxs = []
         cys = []
         image_filenames = []
+        mask_filenames = []
+        semantic_filenames = []
+        masks = []
+        skys = []
 
         flip = torch.eye(3)
         flip[0, 0] = -1.0
@@ -112,6 +141,21 @@ class Phototourism(DataParser):
             cys.append(torch.tensor(cam.params[3]))
 
             image_filenames.append(self.data / "dense/images" / img.name)
+            mask_filenames.append(self.data / "masks" / img.name.replace(".jpg", ".npy"))
+            semantic_filenames.append(self.data / "semantic_maps" / img.name.replace(".jpg", ".npz"))
+
+            # load mask
+            mask = np.load(mask_filenames[-1])  # ["arr_0"]
+
+            mask = torch.from_numpy(mask).unsqueeze(-1).bool()
+            # save nonzeros_indices so we just compute it once
+            nonzero_indices = torch.nonzero(mask[..., 0], as_tuple=False)
+            masks.append(nonzero_indices)
+
+            # load sky
+            semantic = np.load(semantic_filenames[-1])["arr_0"]
+            is_sky = semantic == 2  # sky id is 2
+            skys.append(torch.from_numpy(is_sky).unsqueeze(-1))
 
         poses = torch.stack(poses).float()
         poses[..., 1:3] *= -1
@@ -137,6 +181,7 @@ class Phototourism(DataParser):
         else:
             raise ValueError(f"Unknown dataparser split {split}")
 
+        """
         poses = camera_utils.auto_orient_and_center_poses(
             poses, method=self.config.orientation_method, center_poses=self.config.center_poses
         )
@@ -149,6 +194,20 @@ class Phototourism(DataParser):
         poses[:, :3, 3] *= scale_factor * self.config.scale_factor
         # shift back so that the object is aligned?
         poses[:, 1, 3] -= 1
+        """
+
+        # normalize with scene radius
+        radius = scene_config["radius"]
+        origin = np.array(scene_config["origin"]).reshape(1, 3)
+        origin = torch.from_numpy(origin)
+        poses[:, :3, 3] -= origin
+        poses[:, :3, 3] *= 1.0 / (radius * 1.01)  # enlarge the radius a little bit
+
+        poses = camera_utils.auto_orient_and_center_poses(
+            poses,
+            method=self.config.orientation_method,
+            center_poses=False,
+        )
 
         # in x,y,z order
         # assumes that the scene is centered at the origin
@@ -170,6 +229,8 @@ class Phototourism(DataParser):
 
         cameras = cameras[indices]
         image_filenames = [image_filenames[i] for i in indices]
+        masks = [masks[i] for i in indices]
+        skys = [skys[i] for i in indices]
 
         assert len(cameras) == len(image_filenames)
 
@@ -177,6 +238,7 @@ class Phototourism(DataParser):
             image_filenames=image_filenames,
             cameras=cameras,
             scene_box=scene_box,
+            additional_inputs={"masks": {"func": get_masks, "kwargs": {"masks": masks, "skys": skys}}},
         )
 
         return dataparser_outputs

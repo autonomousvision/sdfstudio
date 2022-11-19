@@ -121,3 +121,34 @@ class NearFarCollider(SceneBoxCollider):
         ray_bundle.nears = ones * near_plane
         ray_bundle.fars = ones * self.far_plane
         return ray_bundle
+
+
+class SphereCollider(SceneBoxCollider):
+    """Sets the nears and fars with intersection with sphere.
+
+    Args:
+        near_plane: distance to near plane
+        far_plane: distance to far plane
+    """
+
+    def __init__(self, radius: float = 1.0, **kwargs) -> None:
+        self.radius = radius
+        super().__init__(**kwargs)
+
+    def forward(self, ray_bundle: RayBundle) -> RayBundle:
+        ray_cam_dot = (ray_bundle.directions * ray_bundle.origins).sum(dim=-1, keepdims=True)
+        under_sqrt = ray_cam_dot**2 - (ray_bundle.origins.norm(p=2, dim=-1, keepdim=True) ** 2 - self.radius**2)
+
+        # sanity check
+        under_sqrt = under_sqrt.clamp_min(0.01)
+        if (under_sqrt <= 0).sum() > 0:
+            print("BOUNDING SPHERE PROBLEM!")
+            breakpoint()
+            exit()
+
+        sphere_intersections = torch.sqrt(under_sqrt) * torch.Tensor([-1, 1]).cuda().float() - ray_cam_dot
+        sphere_intersections = sphere_intersections.clamp_min(0.01)
+
+        ray_bundle.nears = sphere_intersections[:, 0:1]
+        ray_bundle.fars = sphere_intersections[:, 1:2]
+        return ray_bundle

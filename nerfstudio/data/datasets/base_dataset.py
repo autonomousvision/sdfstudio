@@ -57,6 +57,10 @@ class InputDataset(Dataset):
         image_filename = self.dataparser_outputs.image_filenames[image_idx]
         pil_image = Image.open(image_filename)
         image = np.array(pil_image, dtype="uint8")  # shape is (h, w, 3 or 4)
+        mask_filename = str(image_filename).replace("dense/images", "masks").replace(".jpg", ".npy")
+        mask = np.load(mask_filename)
+        image = image * mask[..., None]
+
         assert len(image.shape) == 3
         assert image.dtype == np.uint8
         assert image.shape[2] in [3, 4], f"Image shape of {image.shape} is in correct."
@@ -163,6 +167,11 @@ class GeneralizedDataset(InputDataset):
         image = self.get_image(image_idx)
         data = {"image_idx": image_idx}
         data["image"] = BasicImages([image])
+        for _, data_func_dict in self.dataparser_outputs.additional_inputs.items():
+            assert "func" in data_func_dict, "Missing function to process data: specify `func` in `additional_inputs`"
+            func = data_func_dict["func"]
+            assert "kwargs" in data_func_dict, "No data to process: specify `kwargs` in `additional_inputs`"
+            data.update(func(image_idx, **data_func_dict["kwargs"]))
         if self.has_masks:
             mask_filepath = self.dataparser_outputs.mask_filenames[image_idx]
             data["mask"] = BasicImages([get_image_mask_tensor_from_path(filepath=mask_filepath)])

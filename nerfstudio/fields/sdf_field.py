@@ -297,7 +297,9 @@ class SDFField(Field):
         if self.use_grid_feature:
             # TODO check how we should normalize the points
             # normalize point range as encoding assume points are in [-1, 1]
-            positions = inputs / self.divide_factor
+            # positions = inputs / self.divide_factor
+            positions = self.spatial_distortion(inputs)
+
             positions = (positions + 2.0) / 4.0
             feature = self.encoding(positions)
             # raise NotImplementedError
