@@ -130,18 +130,12 @@ def get_surface_occupancy(occupancy_fn, resolution=512, grid_boundary=[-0.5, 0.5
     def evaluate(points):
         z = []
         for _, pnts in enumerate(torch.split(points, 100000, dim=0)):
-            print(pnts.contiguous().shape, points.shape)
             z.append(occupancy_fn(pnts.contiguous()))
         z = torch.cat(z, axis=0)
         return z
 
-    # print(points.shape)
     z = evaluate(points).detach().cpu().numpy()
-    # print(z.shape)
-    # volume = z.reshape(N, N, N)
-    # import cv2
-    # cv2.imwrite("a.png", volume[256, :, :])
-    # breakpoint()
+
     if not (np.min(z) > level or np.max(z) < level):
         verts, faces, normals, _ = measure.marching_cubes(
             volume=z.reshape(resolution, resolution, resolution),

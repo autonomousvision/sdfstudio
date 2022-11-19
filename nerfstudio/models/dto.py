@@ -39,6 +39,7 @@ from nerfstudio.model_components.ray_samplers import (
     ErrorBoundedSampler,
     LinearDisparitySampler,
     PDFSampler,
+    NeuSSampler,
 )
 from nerfstudio.model_components.renderers import DepthRenderer, SemanticRenderer
 from nerfstudio.model_components.scene_colliders import SphereCollider
@@ -87,6 +88,14 @@ class DtoOModel(NerfactoModel):
             histogram_padding=1e-5,
         )
         self.surface_sampler = PDFSampler(include_original=False, single_jitter=False, histogram_padding=1e-5)
+
+        self.neus_sampler = NeuSSampler(
+            num_samples=64,
+            num_samples_importance=64,
+            num_samples_outside=0,
+            num_upsample_steps=4,
+            base_variance=64,  # 128
+        )
 
         self.renderer_normal = SemanticRenderer()
         self.renderer_depth = DepthRenderer("expected")
@@ -140,7 +149,11 @@ class DtoOModel(NerfactoModel):
 
         # TODO maybe interative sampling to sample more points on the surface?
         # importance samples and merge
-        occupancy_samples = self.pdf_sampler(ray_bundle, base_ray_samples, base_weights, num_samples=64)
+        # occupancy_samples = self.pdf_sampler(ray_bundle, base_ray_samples, base_weights, num_samples=64)
+
+        occupancy_samples = self.neus_sampler(
+            ray_bundle, sdf_fn=self.occupancy_field.get_sdf, ray_samples=base_ray_samples
+        )
 
         # occupancy unisurf
         # field_outputs = self.occupancy_field(occupancy_samples, return_occupancy=True)

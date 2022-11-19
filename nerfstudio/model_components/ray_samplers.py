@@ -848,12 +848,14 @@ class NeuSSampler(Sampler):
         self,
         ray_bundle: Optional[RayBundle] = None,
         sdf_fn: Optional[Callable] = None,
+        ray_samples: Optional[RaySamples] = None,
     ) -> Union[Tuple[RaySamples, torch.Tensor], RaySamples]:
         assert ray_bundle is not None
         assert sdf_fn is not None
 
         # Start with uniform sampling
-        ray_samples = self.uniform_sampler(ray_bundle, num_samples=self.num_samples)
+        if ray_samples is None:
+            ray_samples = self.uniform_sampler(ray_bundle, num_samples=self.num_samples)
 
         total_iters = 0
         sorted_index = None
