@@ -90,11 +90,7 @@ class DtoOModel(NerfactoModel):
         self.surface_sampler = PDFSampler(include_original=False, single_jitter=False, histogram_padding=1e-5)
 
         self.neus_sampler = NeuSSampler(
-            num_samples=64,
-            num_samples_importance=64,
-            num_samples_outside=0,
-            num_upsample_steps=4,
-            base_variance=64,  # 128
+            num_samples=64, num_samples_importance=64, num_samples_outside=0, num_upsample_steps=4, base_variance=128
         )
 
         self.renderer_normal = SemanticRenderer()
@@ -173,12 +169,12 @@ class DtoOModel(NerfactoModel):
             surface_samples = self.surface_sampler(ray_bundle, occupancy_samples, weights, num_samples=8)
 
             self.step_counter += 1
-            if self.step_counter % 1000 == 1:
+            if self.step_counter % 5000 == 0:
                 from nerfstudio.model_components.ray_samplers import save_points
                 from nerfstudio.utils.marching_cubes import get_surface_occupancy
 
                 save_points("a.ply", surface_samples.frustums.get_positions().reshape(-1, 3).detach().cpu().numpy())
-                get_surface_occupancy(occupancy_fn=lambda x: -self.occupancy_field.forward_geonetwork(x)[:, 0])
+                get_surface_occupancy(occupancy_fn=lambda x: self.occupancy_field.forward_geonetwork(x)[:, 0])
                 # breakpoint()
 
         bg_transmittance = transmittance[:, -1, :]
@@ -265,11 +261,11 @@ class DtoOModel(NerfactoModel):
             occupancy_field_weights = outputs["oweights"]
 
             loss_dict["sky_loss"] = (
-                F.binary_cross_entropy(density_field_weights.sum(dim=1).clip(1e-3, 1.0 - 1e-3), sky_label) * 0.001
+                F.binary_cross_entropy(density_field_weights.sum(dim=1).clip(1e-3, 1.0 - 1e-3), sky_label) * 0.01
             )
 
             loss_dict["osky_loss"] = (
-                F.binary_cross_entropy(occupancy_field_weights.sum(dim=1).clip(1e-3, 1.0 - 1e-3), sky_label) * 0.001
+                F.binary_cross_entropy(occupancy_field_weights.sum(dim=1).clip(1e-3, 1.0 - 1e-3), sky_label) * 0.01
             )
 
         if self.training:
@@ -277,11 +273,11 @@ class DtoOModel(NerfactoModel):
             N = surface_points_normal.shape[0] // 2
 
             diff_norm = torch.norm(surface_points_normal[:N] - surface_points_normal[N:], dim=-1)
-            loss_dict["normal_smoothness_loss"] = torch.mean(diff_norm) * 0.001
+            loss_dict["normal_smoothness_loss"] = torch.mean(diff_norm) * 0.0001
 
             # eikonal loss
             surface_points_grad = outputs["surface_grad"]
-            loss_dict["eikonal_loss"] = ((surface_points_grad.norm(2, dim=-1) - 1) ** 2).mean() * 0.01
+            loss_dict["eikonal_loss"] = ((surface_points_grad.norm(2, dim=-1) - 1) ** 2).mean() * 0.0001
 
         return loss_dict
 

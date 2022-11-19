@@ -32,8 +32,10 @@ class ExtractMesh:
         assert self.output_path.suffix == ".json"
 
         # breakpoint()
-        get_surface_occupancy(occupancy_fn=lambda x: -pipeline.model.occupancy_field.forward_geonetwork(x)[:, 0])
-        # get_surface_sliding(sdf=lambda x: -pipeline.model.occupancy_field.forward_geonetwork(x)[:, 0])
+        # get_surface_occupancy(occupancy_fn=lambda x: pipeline.model.occupancy_field.forward_geonetwork(x)[:, 0])
+        get_surface_sliding(
+            sdf=lambda x: pipeline.model.occupancy_field.forward_geonetwork(x)[:, 0].contiguous(), resolution=1024
+        )
 
         # resolution=resolution,
         # grid_boundary=grid_boundary,

@@ -130,7 +130,7 @@ def get_surface_occupancy(occupancy_fn, resolution=512, grid_boundary=[-0.5, 0.5
     def evaluate(points):
         z = []
         for _, pnts in enumerate(torch.split(points, 100000, dim=0)):
-            z.append(occupancy_fn(pnts.contiguous()))
+            z.append(occupancy_fn(pnts.contiguous()).contiguous())
         z = torch.cat(z, axis=0)
         return z
 
