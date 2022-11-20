@@ -107,10 +107,16 @@ class DtoOModel(NerfactoModel):
         self.step_counter = 0
         self.anneal_end = 20000
 
+        self.use_nerfacto = False
+
     def get_training_callbacks(
         self, training_callback_attributes: TrainingCallbackAttributes
     ) -> List[TrainingCallback]:
-        callbacks = []
+        if self.use_nerfacto:
+            callbacks = super().get_training_callbacks(training_callback_attributes)
+        else:
+            callbacks = []
+
         # anneal for cos in NeuS
         if self.anneal_end > 0:
 
@@ -137,19 +143,23 @@ class DtoOModel(NerfactoModel):
         # compute near and far from from sphere with radius 1.0
         ray_bundle = self.sphere_collider(ray_bundle)
 
-        outputs = super().get_outputs(ray_bundle)
+        if self.use_nerfacto:
+            outputs = super().get_outputs(ray_bundle)
 
-        # weights and ray samples from nerfacto
-        base_weights = outputs["weights_list"][-1].detach()
-        base_ray_samples = outputs["ray_samples_list"][-1]
+            # weights and ray samples from nerfacto
+            base_weights = outputs["weights_list"][-1].detach()
+            base_ray_samples = outputs["ray_samples_list"][-1]
 
-        # TODO maybe interative sampling to sample more points on the surface?
-        # importance samples and merge
-        # occupancy_samples = self.pdf_sampler(ray_bundle, base_ray_samples, base_weights, num_samples=64)
+            # TODO maybe interative sampling to sample more points on the surface?
+            # importance samples and merge
+            # occupancy_samples = self.pdf_sampler(ray_bundle, base_ray_samples, base_weights, num_samples=64)
 
-        occupancy_samples = self.neus_sampler(
-            ray_bundle, sdf_fn=self.occupancy_field.get_sdf, ray_samples=base_ray_samples
-        )
+            occupancy_samples = self.neus_sampler(
+                ray_bundle, sdf_fn=self.occupancy_field.get_sdf, ray_samples=base_ray_samples
+            )
+        else:
+            outputs = {}
+            occupancy_samples = self.neus_sampler(ray_bundle, sdf_fn=self.occupancy_field.get_sdf)
 
         # occupancy unisurf
         # field_outputs = self.occupancy_field(occupancy_samples, return_occupancy=True)
@@ -218,8 +228,9 @@ class DtoOModel(NerfactoModel):
             "oweights": weights,
         }
 
-        # merge background color to forgound color of density field
-        outputs["rgb"] = outputs["rgb"] + outputs["transmittance"][:, -1, :] * bg_rgb
+        if self.use_nerfacto:
+            # merge background color to forgound color of density field
+            outputs["rgb"] = outputs["rgb"] + outputs["transmittance"][:, -1, :] * bg_rgb
 
         if self.training:
             surface_points = surface_samples.frustums.get_positions().reshape(-1, 3)
@@ -237,7 +248,10 @@ class DtoOModel(NerfactoModel):
         return outputs
 
     def get_metrics_dict(self, outputs, batch):
-        metrics_dict = super().get_metrics_dict(outputs, batch)
+        if self.use_nerfacto:
+            metrics_dict = super().get_metrics_dict(outputs, batch)
+        else:
+            metrics_dict = {}
 
         image = batch["image"].to(self.device)
         metrics_dict["opsnr"] = self.psnr(outputs["orgb"], image)
@@ -250,20 +264,23 @@ class DtoOModel(NerfactoModel):
         return metrics_dict
 
     def get_loss_dict(self, outputs, batch, metrics_dict=None):
-        loss_dict = super().get_loss_dict(outputs, batch, metrics_dict)
+        if self.use_nerfacto:
+            loss_dict = super().get_loss_dict(outputs, batch, metrics_dict)
+        else:
+            loss_dict = {}
 
         image = batch["image"].to(self.device)
         loss_dict["orgb_loss"] = self.rgb_loss(image, outputs["orgb"])
 
         if self.training and "sky" in batch:
             sky_label = 1.0 - batch["sky"].float().to(self.device)
-            density_field_weights = outputs["weights_list"][-1]
+            if self.use_nerfacto:
+                density_field_weights = outputs["weights_list"][-1]
+                loss_dict["sky_loss"] = (
+                    F.binary_cross_entropy(density_field_weights.sum(dim=1).clip(1e-3, 1.0 - 1e-3), sky_label) * 0.01
+                )
+
             occupancy_field_weights = outputs["oweights"]
-
-            loss_dict["sky_loss"] = (
-                F.binary_cross_entropy(density_field_weights.sum(dim=1).clip(1e-3, 1.0 - 1e-3), sky_label) * 0.01
-            )
-
             loss_dict["osky_loss"] = (
                 F.binary_cross_entropy(occupancy_field_weights.sum(dim=1).clip(1e-3, 1.0 - 1e-3), sky_label) * 0.01
             )
@@ -284,7 +301,10 @@ class DtoOModel(NerfactoModel):
     def get_image_metrics_and_images(
         self, outputs: Dict[str, torch.Tensor], batch: Dict[str, torch.Tensor]
     ) -> Tuple[Dict[str, float], Dict[str, torch.Tensor]]:
-        metrics_dict, images_dict = super().get_image_metrics_and_images(outputs, batch)
+        if self.use_nerfacto:
+            metrics_dict, images_dict = super().get_image_metrics_and_images(outputs, batch)
+        else:
+            metrics_dict, images_dict = {}, {}
 
         image = batch["image"].to(self.device)
         rgb = outputs["orgb"]
