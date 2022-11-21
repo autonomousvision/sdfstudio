@@ -22,8 +22,8 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Type
 
 import torch
-from torch.nn import Parameter
 import torch.nn.functional as F
+from torch.nn import Parameter
 from torchtyping import TensorType
 
 from nerfstudio.cameras.rays import RayBundle
@@ -38,8 +38,8 @@ from nerfstudio.fields.sdf_field import SDFFieldConfig
 from nerfstudio.model_components.ray_samplers import (
     ErrorBoundedSampler,
     LinearDisparitySampler,
-    PDFSampler,
     NeuSSampler,
+    PDFSampler,
 )
 from nerfstudio.model_components.renderers import DepthRenderer, SemanticRenderer
 from nerfstudio.model_components.scene_colliders import SphereCollider
@@ -98,12 +98,17 @@ class DtoOModel(NerfactoModel):
 
         # for merge samples
         # self.error_bounded_sampler = ErrorBoundedSampler()
+        self.error_bounded_sampler = ErrorBoundedSampler(
+            num_samples=64,
+            num_samples_eval=128,
+            num_samples_extra=32,
+        )
 
         # sphere collider
         self.sphere_collider = SphereCollider(radius=1.0)
 
         # background model
-        self.bg_sampler = LinearDisparitySampler(num_samples=32)
+        self.bg_sampler = LinearDisparitySampler(num_samples=8)
         self.step_counter = 0
         self.anneal_end = 20000
 
@@ -159,7 +164,13 @@ class DtoOModel(NerfactoModel):
             )
         else:
             outputs = {}
-            occupancy_samples = self.neus_sampler(ray_bundle, sdf_fn=self.occupancy_field.get_sdf)
+            # NeuS
+            # occupancy_samples = self.neus_sampler(ray_bundle, sdf_fn=self.occupancy_field.get_sdf)
+
+            # VolSDF
+            occupancy_samples, _ = self.error_bounded_sampler(
+                ray_bundle, density_fn=self.occupancy_field.laplace_density, sdf_fn=self.occupancy_field.get_sdf
+            )
 
         # occupancy unisurf
         # field_outputs = self.occupancy_field(occupancy_samples, return_occupancy=True)
@@ -168,10 +179,13 @@ class DtoOModel(NerfactoModel):
         # )
 
         # NeuS
-        field_outputs = self.occupancy_field(occupancy_samples, return_alphas=True)
-        weights, transmittance = occupancy_samples.get_weights_and_transmittance_from_alphas(
-            field_outputs[FieldHeadNames.ALPHA]
-        )
+        # field_outputs = self.occupancy_field(occupancy_samples, return_alphas=True)
+        # weights, transmittance = occupancy_samples.get_weights_and_transmittance_from_alphas(
+        #    field_outputs[FieldHeadNames.ALPHA]
+        # )
+
+        field_outputs = self.occupancy_field(occupancy_samples)
+        weights, transmittance = occupancy_samples.get_weights_and_transmitance(field_outputs[FieldHeadNames.DENSITY])
 
         if self.training:
             # we should sample here before we change the near-far plane for ray_bundle
@@ -260,6 +274,10 @@ class DtoOModel(NerfactoModel):
             # training statics
             metrics_dict["s_val"] = self.occupancy_field.deviation_network.get_variance().item()
             metrics_dict["inv_s"] = 1.0 / self.occupancy_field.deviation_network.get_variance().item()
+
+            # training statics for volsdf
+            metrics_dict["beta"] = self.occupancy_field.laplace_density.get_beta().item()
+            metrics_dict["alpha"] = 1.0 / self.occupancy_field.laplace_density.get_beta().item()
 
         return metrics_dict
 
