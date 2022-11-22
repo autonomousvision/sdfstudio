@@ -28,7 +28,11 @@ from torchtyping import TensorType
 
 from nerfstudio.cameras.rays import RaySamples
 from nerfstudio.field_components.embedding import Embedding
-from nerfstudio.field_components.encodings import NeRFEncoding
+from nerfstudio.field_components.encodings import (
+    NeRFEncoding,
+    PeriodicVolumeEncoding,
+    TensorVMEncoding,
+)
 from nerfstudio.field_components.field_heads import FieldHeadNames
 from nerfstudio.field_components.spatial_distortions import SpatialDistortion
 from nerfstudio.fields.base_field import Field, FieldConfig
@@ -187,20 +191,35 @@ class SDFField(Field):
         smoothstep = True
         growth_factor = np.exp((np.log(max_res) - np.log(base_res)) / (num_levels - 1))
 
-        # feature encoding
-        self.encoding = tcnn.Encoding(
-            n_input_dims=3,
-            encoding_config={
-                "otype": "HashGrid" if use_hash else "DenseGrid",
-                "n_levels": num_levels,
-                "n_features_per_level": features_per_level,
-                "log2_hashmap_size": log2_hashmap_size,
-                "base_resolution": base_res,
-                "per_level_scale": growth_factor,
-                "interpolation": "Smoothstep" if smoothstep else "Linear",
-            },
-        )
+        self.encoding_type = "hash"  # "hash"
+        if self.encoding_type == "hash":
+            # feature encoding
+            self.encoding = tcnn.Encoding(
+                n_input_dims=3,
+                encoding_config={
+                    "otype": "HashGrid" if use_hash else "DenseGrid",
+                    "n_levels": num_levels,
+                    "n_features_per_level": features_per_level,
+                    "log2_hashmap_size": log2_hashmap_size,
+                    "base_resolution": base_res,
+                    "per_level_scale": growth_factor,
+                    "interpolation": "Smoothstep" if smoothstep else "Linear",
+                },
+            )
+        elif self.encoding_type == "periodic":
+            print("using periodic encoding")
+            self.encoding = PeriodicVolumeEncoding(
+                num_levels=num_levels,
+                min_res=base_res,
+                max_res=max_res,
+                log2_hashmap_size=12,  # 64 ** 3 = 2^18
+                features_per_level=features_per_level,
+            )
+        elif self.encoding_type == "tensorf_vm":
+            print("using tensor vm")
+            self.encoding = TensorVMEncoding(128, 24)
 
+        # TODO make this configurable
         # we concat inputs position ourselves
         self.position_encoding = NeRFEncoding(
             in_dim=3, num_frequencies=6, min_freq_exp=0.0, max_freq_exp=5.0, include_input=False
@@ -300,7 +319,7 @@ class SDFField(Field):
             # positions = inputs / self.divide_factor
             positions = self.spatial_distortion(inputs)
 
-            positions = (positions + 2.0) / 4.0
+            positions = (positions + 1.0) / 2.0
             feature = self.encoding(positions)
             # raise NotImplementedError
         else:

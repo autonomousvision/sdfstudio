@@ -143,6 +143,13 @@ class NeRFEncoding(Encoding):
         # TODO check scaling here but just comment it for now
         # in_tensor = 2 * torch.pi * in_tensor  # scale to [0, 2pi]
         freqs = 2 ** torch.linspace(self.min_freq, self.max_freq, self.num_frequencies).to(in_tensor.device)
+        # freqs = 2 ** (
+        #    torch.sin(torch.linspace(self.min_freq, torch.pi / 2.0, self.num_frequencies)) * self.max_freq
+        # ).to(in_tensor.device)
+        # freqs = 2 ** (
+        #     torch.linspace(self.min_freq, 1.0, self.num_frequencies).to(in_tensor.device) ** 0.2 * self.max_freq
+        # )
+
         scaled_inputs = in_tensor[..., None] * freqs  # [..., "input_dim", "num_scales"]
         scaled_inputs = scaled_inputs.view(*scaled_inputs.shape[:-2], -1)  # [..., "input_dim" * "num_scales"]
 
@@ -417,26 +424,93 @@ class TensorVMEncoding(Encoding):
         self.resolution = resolution
         self.num_components = num_components
 
-        self.plane_coef = nn.Parameter(init_scale * torch.randn((3, num_components, resolution, resolution)))
-        self.line_coef = nn.Parameter(init_scale * torch.randn((3, num_components, resolution, 1)))
+        self.plane_coef = nn.Parameter(init_scale * torch.randn((3 * resolution * resolution, num_components)))
+        self.line_coef = nn.Parameter(init_scale * torch.randn((3 * resolution, num_components)))
+
+        self.n_output_dims = self.get_out_dim()
 
     def get_out_dim(self) -> int:
         return self.num_components * 3
 
+    def index_fn(self, x: torch.Tensor, y: torch.Tensor, width: int, height: int):
+        y.clamp_max_(height - 1)
+        x.clamp_max_(width - 1)
+
+        if y.max() >= height or x.max() >= width:
+            breakpoint()
+
+        index = y * width + x
+        feature_offset = width * height * torch.arange(3)
+        index += feature_offset.to(x.device)[:, None, None]
+
+        return index.long()
+
+    def grid_sample_2d(self, feature, coord, align_corners=True, type="plane"):
+        if type == "plane":
+            height, width = self.resolution, self.resolution
+        else:
+            height, width = self.resolution, 1
+
+        scaled = coord * torch.tensor([width, height]).to(coord.device)[None, None]
+        scaled_c = torch.ceil(scaled).type(torch.int32)
+        scaled_f = torch.floor(scaled).type(torch.int32)
+
+        offset = scaled - scaled_f
+        # smooth version of offset
+        offset = offset * offset * (3.0 - 2.0 * offset)
+        offset = offset[..., None, :]
+
+        index_0 = self.index_fn(scaled_c[..., 0:1], scaled_c[..., 1:2], height, width)  # [..., num_levels]
+        index_2 = self.index_fn(scaled_f[..., 0:1], scaled_f[..., 1:2], height, width)
+        if type == "plane":
+            index_1 = self.index_fn(scaled_c[..., 0:1], scaled_f[..., 1:2], height, width)
+            index_3 = self.index_fn(scaled_f[..., 0:1], scaled_c[..., 1:2], height, width)
+
+        # breakpoint()
+        if type == "plane":
+            f_0 = feature[index_0]  # [..., num_levels, features_per_level]
+            f_1 = feature[index_1]
+            f_2 = feature[index_2]
+            f_3 = feature[index_3]
+
+            f_03 = f_0 * offset[..., 0:1] + f_3 * (1 - offset[..., 0:1])
+            f_12 = f_1 * offset[..., 0:1] + f_2 * (1 - offset[..., 0:1])
+
+            f0312 = f_03 * offset[..., 1:2] + f_12 * (1 - offset[..., 1:2])
+
+            return f0312
+        else:
+            f_0 = feature[index_0]  # [..., num_levels, features_per_level]
+            f_2 = feature[index_2]
+            f_02 = f_0 * offset[..., 0:1] + f_2 * (1 - offset[..., 0:1])
+            return f_02
+
     def forward(self, in_tensor: TensorType["bs":..., "input_dim"]) -> TensorType["bs":..., "output_dim"]:
         plane_coord = torch.stack([in_tensor[..., [0, 1]], in_tensor[..., [0, 2]], in_tensor[..., [1, 2]]])  # [3,...,2]
         line_coord = torch.stack([in_tensor[..., 2], in_tensor[..., 1], in_tensor[..., 0]])  # [3, ...]
-        line_coord = torch.stack([torch.zeros_like(line_coord), line_coord], dim=-1)  # [3, ...., 2]
+        line_coord = torch.stack([line_coord, torch.zeros_like(line_coord)], dim=-1)  # [3, ...., 2]
 
         # Stop gradients from going to sampler
-        plane_coord = plane_coord.view(3, -1, 1, 2).detach()
-        line_coord = line_coord.view(3, -1, 1, 2).detach()
+        # plane_coord = plane_coord.view(3, -1, 1, 2).detach()
+        # line_coord = line_coord.view(3, -1, 1, 2).detach()
 
-        plane_features = F.grid_sample(self.plane_coef, plane_coord, align_corners=True)  # [3, Components, -1, 1]
-        line_features = F.grid_sample(self.line_coef, line_coord, align_corners=True)  # [3, Components, -1, 1]
+        # plane_features = F.grid_sample(self.plane_coef, plane_coord, align_corners=True)  # [3, Components, -1, 1]
+        # line_features = F.grid_sample(self.line_coef, line_coord, align_corners=True)  # [3, Components, -1, 1]
 
-        features = plane_features * line_features  # [3, Components, -1, 1]
-        features = torch.moveaxis(features.view(3 * self.num_components, *in_tensor.shape[:-1]), 0, -1)
+        # diff grid_sample
+
+        plane_features = self.grid_sample_2d(
+            self.plane_coef, plane_coord, align_corners=True, type="plane"
+        )  # [3, -1, 1, Components]
+        # line_features = self.grid_sample_2d(
+        #    self.line_coef, line_coord, align_corners=True, type="line"
+        # )  # [3, -1, 1, Components]
+
+        # features = plane_features * line_features  # [3, -1, 1, components]
+        features = plane_features
+        features = torch.moveaxis(features, 0, 1).reshape(-1, 3 * self.num_components)
+
+        # features = torch.moveaxis(features.view(3 * self.num_components, *in_tensor.shape[:-1]), 0, -1)
 
         return features  # [..., 3 * Components]
 
@@ -478,3 +552,133 @@ class SHEncoding(Encoding):
     @torch.no_grad()
     def forward(self, in_tensor: TensorType["bs":..., "input_dim"]) -> TensorType["bs":..., "output_dim"]:
         return components_from_spherical_harmonics(levels=self.levels, directions=in_tensor)
+
+
+class PeriodicVolumeEncoding(Encoding):
+    """Periodic Volume encoding
+
+    Args:
+        num_levels: Number of feature grids.
+        min_res: Resolution of smallest feature grid.
+        max_res: Resolution of largest feature grid.
+        log2_hashmap_size: Size of hash map is 2^log2_hashmap_size.
+        features_per_level: Number of features per level.
+        hash_init_scale: Value to initialize hash grid.
+        implementation: Implementation of hash encoding. Fallback to torch if tcnn not available.
+    """
+
+    def __init__(
+        self,
+        num_levels: int = 16,
+        min_res: int = 16,
+        max_res: int = 1024,
+        log2_hashmap_size: int = 19,
+        features_per_level: int = 2,
+        hash_init_scale: float = 0.001,
+    ) -> None:
+
+        super().__init__(in_dim=3)
+        self.num_levels = num_levels
+        self.features_per_level = features_per_level
+        self.log2_hashmap_size = log2_hashmap_size
+        assert log2_hashmap_size % 3 == 0
+        self.hash_table_size = 2**log2_hashmap_size
+        self.n_output_dims = num_levels * features_per_level
+
+        levels = torch.arange(num_levels)
+        growth_factor = np.exp((np.log(max_res) - np.log(min_res)) / (num_levels - 1))
+        self.scalings = torch.floor(min_res * growth_factor**levels)
+
+        self.periodic_volume_resolution = 16
+        # self.periodic_resolution = torch.minimum(torch.floor(self.scalings), periodic_volume_resolution)
+
+        self.hash_offset = levels * self.hash_table_size
+        self.hash_table = torch.rand(size=(self.hash_table_size * num_levels, features_per_level)) * 2 - 1
+        self.hash_table *= hash_init_scale
+        self.hash_table = nn.Parameter(self.hash_table)
+
+    def get_out_dim(self) -> int:
+        return self.num_levels * self.features_per_level
+
+    def hash_fn(self, in_tensor: TensorType["bs":..., "num_levels", 3]) -> TensorType["bs":..., "num_levels"]:
+        """Returns hash tensor using method described in Instant-NGP
+
+        Args:
+            in_tensor: Tensor to be hashed
+        """
+
+        # min_val = torch.min(in_tensor)
+        # max_val = torch.max(in_tensor)
+        # assert min_val >= 0.0
+        # assert max_val <= 1.0
+
+        # in_tensor = in_tensor * torch.tensor([1, 2654435761, 805459861]).to(in_tensor.device)
+        # x = torch.bitwise_xor(in_tensor[..., 0], in_tensor[..., 1])
+        # x = torch.bitwise_xor(x, in_tensor[..., 2])
+        # x %= self.hash_table_size
+        # x += self.hash_offset.to(x.device)
+
+        # breakpoint()
+
+        # round to make it perioidic
+        x = in_tensor
+        x %= self.periodic_volume_resolution
+        # xyz to index
+        x = (
+            x[..., 0] * (self.periodic_volume_resolution**2)
+            + x[..., 1] * (self.periodic_volume_resolution)
+            + x[..., 2]
+        )
+        # offset by feature levels
+        x += self.hash_offset.to(x.device)
+
+        return x.long()
+
+    def pytorch_fwd(self, in_tensor: TensorType["bs":..., "input_dim"]) -> TensorType["bs":..., "output_dim"]:
+        """Forward pass using pytorch. Significantly slower than TCNN implementation."""
+
+        assert in_tensor.shape[-1] == 3
+        in_tensor = in_tensor[..., None, :]  # [..., 1, 3]
+        scaled = in_tensor * self.scalings.view(-1, 1).to(in_tensor.device)  # [..., L, 3]
+        scaled_c = torch.ceil(scaled).type(torch.int32)
+        scaled_f = torch.floor(scaled).type(torch.int32)
+
+        offset = scaled - scaled_f
+
+        # smooth version of offset
+        # offset = offset * offset * (3.0 - 2.0 * offset)
+
+        hashed_0 = self.hash_fn(scaled_c)  # [..., num_levels]
+        hashed_1 = self.hash_fn(torch.cat([scaled_c[..., 0:1], scaled_f[..., 1:2], scaled_c[..., 2:3]], dim=-1))
+        hashed_2 = self.hash_fn(torch.cat([scaled_f[..., 0:1], scaled_f[..., 1:2], scaled_c[..., 2:3]], dim=-1))
+        hashed_3 = self.hash_fn(torch.cat([scaled_f[..., 0:1], scaled_c[..., 1:2], scaled_c[..., 2:3]], dim=-1))
+        hashed_4 = self.hash_fn(torch.cat([scaled_c[..., 0:1], scaled_c[..., 1:2], scaled_f[..., 2:3]], dim=-1))
+        hashed_5 = self.hash_fn(torch.cat([scaled_c[..., 0:1], scaled_f[..., 1:2], scaled_f[..., 2:3]], dim=-1))
+        hashed_6 = self.hash_fn(scaled_f)
+        hashed_7 = self.hash_fn(torch.cat([scaled_f[..., 0:1], scaled_c[..., 1:2], scaled_f[..., 2:3]], dim=-1))
+
+        f_0 = self.hash_table[hashed_0]  # [..., num_levels, features_per_level]
+        f_1 = self.hash_table[hashed_1]
+        f_2 = self.hash_table[hashed_2]
+        f_3 = self.hash_table[hashed_3]
+        f_4 = self.hash_table[hashed_4]
+        f_5 = self.hash_table[hashed_5]
+        f_6 = self.hash_table[hashed_6]
+        f_7 = self.hash_table[hashed_7]
+
+        f_03 = f_0 * offset[..., 0:1] + f_3 * (1 - offset[..., 0:1])
+        f_12 = f_1 * offset[..., 0:1] + f_2 * (1 - offset[..., 0:1])
+        f_56 = f_5 * offset[..., 0:1] + f_6 * (1 - offset[..., 0:1])
+        f_47 = f_4 * offset[..., 0:1] + f_7 * (1 - offset[..., 0:1])
+
+        f0312 = f_03 * offset[..., 1:2] + f_12 * (1 - offset[..., 1:2])
+        f4756 = f_47 * offset[..., 1:2] + f_56 * (1 - offset[..., 1:2])
+
+        encoded_value = f0312 * offset[..., 2:3] + f4756 * (
+            1 - offset[..., 2:3]
+        )  # [..., num_levels, features_per_level]
+
+        return torch.flatten(encoded_value, start_dim=-2, end_dim=-1)  # [..., num_levels * features_per_level]
+
+    def forward(self, in_tensor: TensorType["bs":..., "input_dim"]) -> TensorType["bs":..., "output_dim"]:
+        return self.pytorch_fwd(in_tensor)
