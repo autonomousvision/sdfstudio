@@ -40,13 +40,13 @@ from nerfstudio.model_components.ray_samplers import (
     LinearDisparitySampler,
     NeuSSampler,
     PDFSampler,
+    save_points,
 )
 from nerfstudio.model_components.renderers import DepthRenderer, SemanticRenderer
 from nerfstudio.model_components.scene_colliders import SphereCollider
 from nerfstudio.models.nerfacto import NerfactoModel, NerfactoModelConfig
 from nerfstudio.utils import colormaps
 from nerfstudio.utils.colors import get_color
-from nerfstudio.model_components.ray_samplers import save_points
 from nerfstudio.utils.marching_cubes import get_surface_occupancy
 
 
@@ -115,6 +115,7 @@ class DtoOModel(NerfactoModel):
         self.anneal_end = 20000
 
         self.use_nerfacto = False
+        self.method = "neus"
 
     def get_training_callbacks(
         self, training_callback_attributes: TrainingCallbackAttributes
@@ -166,13 +167,13 @@ class DtoOModel(NerfactoModel):
             )
         else:
             outputs = {}
-            # NeuS
-            # occupancy_samples = self.neus_sampler(ray_bundle, sdf_fn=self.occupancy_field.get_sdf)
-
-            # VolSDF
-            occupancy_samples, _ = self.error_bounded_sampler(
-                ray_bundle, density_fn=self.occupancy_field.laplace_density, sdf_fn=self.occupancy_field.get_sdf
-            )
+            if self.method == "neus":
+                occupancy_samples = self.neus_sampler(ray_bundle, sdf_fn=self.occupancy_field.get_sdf)
+            elif self.method == "volsdf":
+                # VolSDF
+                occupancy_samples, _ = self.error_bounded_sampler(
+                    ray_bundle, density_fn=self.occupancy_field.laplace_density, sdf_fn=self.occupancy_field.get_sdf
+                )
 
         # occupancy unisurf
         # field_outputs = self.occupancy_field(occupancy_samples, return_occupancy=True)
@@ -180,14 +181,16 @@ class DtoOModel(NerfactoModel):
         #    field_outputs[FieldHeadNames.OCCUPANCY]
         # )
 
-        # NeuS
-        # field_outputs = self.occupancy_field(occupancy_samples, return_alphas=True)
-        # weights, transmittance = occupancy_samples.get_weights_and_transmittance_from_alphas(
-        #    field_outputs[FieldHeadNames.ALPHA]
-        # )
-
-        field_outputs = self.occupancy_field(occupancy_samples)
-        weights, transmittance = occupancy_samples.get_weights_and_transmitance(field_outputs[FieldHeadNames.DENSITY])
+        if self.method == "neus":
+            field_outputs = self.occupancy_field(occupancy_samples, return_alphas=True)
+            weights, transmittance = occupancy_samples.get_weights_and_transmittance_from_alphas(
+                field_outputs[FieldHeadNames.ALPHA]
+            )
+        elif self.method == "volsdf":
+            field_outputs = self.occupancy_field(occupancy_samples)
+            weights, transmittance = occupancy_samples.get_weights_and_transmitance(
+                field_outputs[FieldHeadNames.DENSITY]
+            )
 
         if self.training:
             # we should sample here before we change the near-far plane for ray_bundle
@@ -253,8 +256,10 @@ class DtoOModel(NerfactoModel):
             "odepth": depth,
             "onormal": normal,
             "oweights": weights,
-            "surface_sdf": surface_sdf,
         }
+
+        if self.training:
+            outputs_occupancy.update({"surface_sdf": surface_sdf})
 
         if self.use_nerfacto:
             # merge background color to forgound color of density field
