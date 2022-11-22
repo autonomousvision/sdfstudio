@@ -46,6 +46,8 @@ from nerfstudio.model_components.scene_colliders import SphereCollider
 from nerfstudio.models.nerfacto import NerfactoModel, NerfactoModelConfig
 from nerfstudio.utils import colormaps
 from nerfstudio.utils.colors import get_color
+from nerfstudio.model_components.ray_samplers import save_points
+from nerfstudio.utils.marching_cubes import get_surface_occupancy
 
 
 @dataclass
@@ -194,8 +196,6 @@ class DtoOModel(NerfactoModel):
 
             self.step_counter += 1
             if self.step_counter % 5000 == 0:
-                from nerfstudio.model_components.ray_samplers import save_points
-                from nerfstudio.utils.marching_cubes import get_surface_occupancy
 
                 save_points("a.ply", surface_samples.frustums.get_positions().reshape(-1, 3).detach().cpu().numpy())
                 get_surface_occupancy(occupancy_fn=lambda x: self.occupancy_field.forward_geonetwork(x)[:, 0])
@@ -210,6 +210,19 @@ class DtoOModel(NerfactoModel):
 
         normal = self.renderer_normal(semantics=field_outputs[FieldHeadNames.NORMAL], weights=weights)
         accumulation = self.renderer_accumulation(weights=weights)
+
+        # save rendered points for visualization
+        pts = self.renderer_normal(semantics=occupancy_samples.frustums.get_positions(), weights=weights)
+        hit_mask = (field_outputs[FieldHeadNames.SDF] > 0.0).any(dim=1) & (field_outputs[FieldHeadNames.SDF] < 0.0).any(
+            dim=1
+        )
+        pts = pts[hit_mask[:, 0]]
+        # save_points("a.ply", pts.reshape(-1, 3).detach().cpu().numpy())
+        # breakpoint()
+        if pts.shape[0] > 0:
+            surface_sdf = self.occupancy_field.forward_geonetwork(pts)[:, 0]
+        else:
+            surface_sdf = None
 
         # sample inversely from far to 100 and points and forwart the bg model
         ray_bundle.nears = ray_bundle.fars
@@ -240,6 +253,7 @@ class DtoOModel(NerfactoModel):
             "odepth": depth,
             "onormal": normal,
             "oweights": weights,
+            "surface_sdf": surface_sdf,
         }
 
         if self.use_nerfacto:
@@ -313,6 +327,11 @@ class DtoOModel(NerfactoModel):
             # eikonal loss
             surface_points_grad = outputs["surface_grad"]
             loss_dict["eikonal_loss"] = ((surface_points_grad.norm(2, dim=-1) - 1) ** 2).mean() * 0.0001
+
+            # surface points loss
+            surface_points_sdf = outputs["surface_sdf"]
+            if surface_points_sdf is not None:
+                loss_dict["surface_sdf_loss"] = torch.abs(surface_points_sdf).mean() * 0.1
 
         return loss_dict
 
