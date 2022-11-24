@@ -114,8 +114,12 @@ class NerfactoModel(Model):
         scene_contraction = SceneContraction(order=float("inf"))
 
         # Fields
+        aabb_scale = 1.0
+        aabb = torch.tensor(
+            [[-aabb_scale, -aabb_scale, -aabb_scale], [aabb_scale, aabb_scale, aabb_scale]], dtype=torch.float32
+        )
         self.field = TCNNNerfactoField(
-            self.scene_box.aabb,
+            aabb,
             spatial_distortion=scene_contraction,
             num_images=self.num_train_data,
             use_average_appearance_embedding=self.config.use_average_appearance_embedding,
@@ -135,7 +139,7 @@ class NerfactoModel(Model):
             for i in range(num_prop_nets):
                 prop_net_args = self.config.proposal_net_args_list[min(i, len(self.config.proposal_net_args_list) - 1)]
                 network = HashMLPDensityField(
-                    self.scene_box.aabb,
+                    aabb,
                     spatial_distortion=scene_contraction,
                     **prop_net_args,
                 )

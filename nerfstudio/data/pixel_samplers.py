@@ -128,11 +128,20 @@ def collate_image_dataset_batch_list(batch: Dict, num_rays_per_batch: int, keep_
     collated_batch = {
         key: value[c, y, x]
         for key, value in batch.items()
-        if key != "image_idx" and key != "image" and key != "mask" and key != "sky" and value is not None
+        if key != "image_idx"
+        and key != "image"
+        and key != "mask"
+        and key != "sky"
+        and key != "sparse_pts"
+        and value is not None
     }
 
     collated_batch["image"] = torch.cat(all_images, dim=0)
     collated_batch["sky"] = torch.cat(all_skys, dim=0)
+
+    if "sparse_pts" in batch:
+        rand_idx = random.randint(0, num_images - 1)
+        collated_batch["sparse_pts"] = batch["sparse_pts"][rand_idx]
 
     assert collated_batch["image"].shape == (num_rays_per_batch, 3), collated_batch["image"].shape
 
@@ -179,6 +188,8 @@ class PixelSampler:  # pylint: disable=too-few-public-methods
                 image_batch["mask"] = image_batch["mask"].images
             if "sky" in image_batch:
                 image_batch["sky"] = image_batch["sky"].images
+            if "sparse_pts" in image_batch:
+                image_batch["sparse_pts"] = image_batch["sparse_pts"].images
             pixel_batch = collate_image_dataset_batch_list(
                 image_batch, self.num_rays_per_batch, keep_full_image=self.keep_full_image
             )

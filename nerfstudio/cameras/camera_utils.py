@@ -460,4 +460,4 @@ def auto_orient_and_center_poses(
         oriented_poses = poses
         poses[:, :3, 3] -= translation
 
-    return oriented_poses
+    return oriented_poses, transform

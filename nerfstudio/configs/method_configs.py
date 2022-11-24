@@ -40,18 +40,22 @@ from nerfstudio.data.dataparsers.friends_dataparser import FriendsDataParserConf
 from nerfstudio.data.dataparsers.nerfstudio_dataparser import NerfstudioDataParserConfig
 from nerfstudio.data.dataparsers.uniscene_dataparser import UniSceneDataParserConfig
 from nerfstudio.engine.optimizers import AdamOptimizerConfig, RAdamOptimizerConfig
-from nerfstudio.engine.schedulers import ExponentialSchedulerConfig, MultiStepSchedulerConfig, NeuSSchedulerConfig
+from nerfstudio.engine.schedulers import (
+    ExponentialSchedulerConfig,
+    MultiStepSchedulerConfig,
+    NeuSSchedulerConfig,
+)
 from nerfstudio.field_components.temporal_distortions import TemporalDistortionKind
+from nerfstudio.models.dto import DtoOModelConfig
 from nerfstudio.models.instant_ngp import InstantNGPModelConfig
 from nerfstudio.models.mipnerf import MipNerfModel
-from nerfstudio.models.neus import NeuSModelConfig
-from nerfstudio.models.volsdf import VolSDFModelConfig
-from nerfstudio.models.unisurf import UniSurfModelConfig
 from nerfstudio.models.nerfacto import NerfactoModelConfig
-from nerfstudio.models.dto import DtoOModelConfig
+from nerfstudio.models.neus import NeuSModelConfig
 from nerfstudio.models.semantic_nerfw import SemanticNerfWModelConfig
 from nerfstudio.models.tensorf import TensoRFModelConfig
+from nerfstudio.models.unisurf import UniSurfModelConfig
 from nerfstudio.models.vanilla_nerf import NeRFModel, VanillaModelConfig
+from nerfstudio.models.volsdf import VolSDFModelConfig
 from nerfstudio.pipelines.base_pipeline import (
     FlexibleInputPipelineConfig,
     VanillaPipelineConfig,
@@ -332,7 +336,7 @@ method_configs["dto"] = Config(
             "scheduler": MultiStepSchedulerConfig(max_steps=300000),
         },
         "occupancy_field": {
-            "optimizer": AdamOptimizerConfig(lr=5e-3, eps=1e-15),
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
             "scheduler": NeuSSchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=300000),
         },
     },

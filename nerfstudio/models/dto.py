@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Type
 
+import nerfacc
 import torch
 import torch.nn.functional as F
 from torch.nn import Parameter
@@ -40,6 +41,8 @@ from nerfstudio.model_components.ray_samplers import (
     LinearDisparitySampler,
     NeuSSampler,
     PDFSampler,
+    UniformSampler,
+    UniSurfSampler,
     save_points,
 )
 from nerfstudio.model_components.renderers import DepthRenderer, SemanticRenderer
@@ -76,9 +79,18 @@ class DtoOModel(NerfactoModel):
 
         scene_contraction = SceneContraction(order=float("inf"))
 
+        # create occupancy grid from scene_bbox
+        aabb_scale = 1.0
+        aabb = [[-aabb_scale, -aabb_scale, -aabb_scale], [aabb_scale, aabb_scale, aabb_scale]]
+        aabb = torch.tensor(aabb, dtype=torch.float32)
+
+        self.grid = nerfacc.OccupancyGrid(aabb.reshape(-1), resolution=32)
+        self._binary = self.scene_box.reshape(32, 32, 32).contiguous()
+        self._binary_fine = None
+
         # Occupancy
         self.occupancy_field = self.config.sdf_field.setup(
-            aabb=self.scene_box.aabb,
+            aabb=aabb,
             spatial_distortion=scene_contraction,
             num_images=self.num_train_data,
             use_average_appearance_embedding=self.config.use_average_appearance_embedding,
@@ -91,14 +103,18 @@ class DtoOModel(NerfactoModel):
         )
         self.surface_sampler = PDFSampler(include_original=False, single_jitter=False, histogram_padding=1e-5)
 
+        self.uniform_sampler = UniformSampler(single_jitter=False)
+
         self.neus_sampler = NeuSSampler(
-            num_samples=64, num_samples_importance=64, num_samples_outside=0, num_upsample_steps=4, base_variance=128
+            num_samples=8, num_samples_importance=16, num_samples_outside=0, num_upsample_steps=2, base_variance=512
         )
 
         self.renderer_normal = SemanticRenderer()
         self.renderer_depth = DepthRenderer("expected")
 
         # for merge samples
+        self.unisurf_sampler = UniSurfSampler()
+
         # self.error_bounded_sampler = ErrorBoundedSampler()
         self.error_bounded_sampler = ErrorBoundedSampler(
             num_samples=64,
@@ -110,7 +126,7 @@ class DtoOModel(NerfactoModel):
         self.sphere_collider = SphereCollider(radius=1.0)
 
         # background model
-        self.bg_sampler = LinearDisparitySampler(num_samples=8)
+        self.bg_sampler = LinearDisparitySampler(num_samples=4)
         self.step_counter = 0
         self.anneal_end = 20000
 
@@ -151,6 +167,97 @@ class DtoOModel(NerfactoModel):
         # compute near and far from from sphere with radius 1.0
         ray_bundle = self.sphere_collider(ray_bundle)
 
+        # near and far from occupancy grids
+        packed_info, ray_indices, t_starts, t_ends = nerfacc.cuda.ray_marching(
+            ray_bundle.origins.contiguous(),
+            ray_bundle.directions.contiguous(),
+            ray_bundle.nears[:, 0].contiguous(),
+            ray_bundle.fars[:, 0].contiguous(),
+            self.grid.roi_aabb.contiguous(),
+            self._binary.cuda(),
+            self.grid.contraction_type.to_cpp_version(),
+            1e-3,
+            0.0,
+        )
+
+        tt_starts = nerfacc.unpack_data(packed_info, t_starts, n_samples=1024)
+        # tt_ends = nerfacc.unpack_data(packed_info, t_ends, n_samples=1024)
+
+        hit_grid = (tt_starts > 0).any(dim=1)[:, 0]
+        ray_bundle.nears[hit_grid] = tt_starts[hit_grid][:, 0]
+        ray_bundle.fars[hit_grid] = tt_starts[hit_grid].max(dim=1)[0]
+
+        # sample uniformly with currently nears and far
+        voxel_samples = self.uniform_sampler(ray_bundle, num_samples=10)
+
+        nears = ray_bundle.nears.clone()
+        fars = ray_bundle.fars.clone()
+
+        if self.training and self.step_counter > 5000 and self.step_counter % 5000 == 1:
+            grid_size = 32
+            voxel_size = 2.0 / 32
+            fine_grid_size = 16
+            offset = torch.linspace(-1.0, 1.0, fine_grid_size * 2 + 1, device=self.device)[1::2]
+            x, y, z = torch.meshgrid(offset, offset, offset, indexing="ij")
+            fine_offset_cube = torch.stack([x, y, z], dim=-1).reshape(-1, 3) * voxel_size
+
+            # coarse grid coordinates
+            offset = torch.linspace(-1.0 + voxel_size / 2.0, 1.0 - voxel_size / 2.0, grid_size, device=self.device)
+            x, y, z = torch.meshgrid(offset, offset, offset, indexing="ij")
+            coarse_offset_cube = torch.stack([x, y, z], dim=-1).reshape(-1, 3)
+
+            # xyz
+            mask = torch.zeros((grid_size**3, fine_grid_size**3), dtype=torch.bool, device=self.device)
+
+            occupied_voxel = coarse_offset_cube[self._binary.reshape(-1)]
+            fine_voxel = occupied_voxel[:, None] + fine_offset_cube[None, :]
+            print(fine_voxel.shape)
+            fine_voxel = fine_voxel.reshape(-1, 3)
+            # save_points("fine_voxel.ply", fine_voxel.cpu().numpy())
+
+            @torch.no_grad()
+            def evaluate(points):
+                z = []
+                for _, pnts in enumerate(torch.split(points, 100000, dim=0)):
+                    z.append(self.occupancy_field.forward_geonetwork(pnts)[:, 0].contiguous())
+                z = torch.cat(z, axis=0)
+                return z
+
+            sdf = evaluate(fine_voxel)
+            sdf = sdf.reshape(occupied_voxel.shape[0], fine_grid_size**3)
+            sdf_mask = sdf <= 0.0
+            mask[self._binary.reshape(-1)] = sdf_mask
+
+            self._binary_fine = (
+                mask.reshape(grid_size, grid_size, grid_size, fine_grid_size, fine_grid_size, fine_grid_size)
+                .permute(0, 3, 1, 4, 2, 5)
+                .reshape(grid_size * fine_grid_size, grid_size * fine_grid_size, grid_size * fine_grid_size)
+                .contiguous()
+            )
+
+        if self._binary_fine is not None:
+            # near and far from occupancy grids
+            packed_info, ray_indices, t_starts, t_ends = nerfacc.cuda.ray_marching(
+                ray_bundle.origins.contiguous(),
+                ray_bundle.directions.contiguous(),
+                ray_bundle.nears[:, 0].contiguous(),
+                ray_bundle.fars[:, 0].contiguous(),
+                self.grid.roi_aabb.contiguous(),
+                self._binary_fine,
+                self.grid.contraction_type.to_cpp_version(),
+                1e-3,
+                0.0,
+            )
+
+            tt_starts = nerfacc.unpack_data(packed_info, t_starts, n_samples=1024)
+            # tt_ends = nerfacc.unpack_data(packed_info, t_ends, n_samples=1024)
+
+            # update with near and far
+            hit_grid = (tt_starts > 0).any(dim=1)[:, 0]
+            ray_bundle.nears[hit_grid] = tt_starts[hit_grid][:, 0] - 0.03
+            ray_bundle.fars[hit_grid] = tt_starts[hit_grid][:, 0] + 0.03
+            print("sampling around surfaces")
+
         if self.use_nerfacto:
             outputs = super().get_outputs(ray_bundle)
 
@@ -175,12 +282,30 @@ class DtoOModel(NerfactoModel):
                     ray_bundle, density_fn=self.occupancy_field.laplace_density, sdf_fn=self.occupancy_field.get_sdf
                 )
 
+        # merge samples
+        occupancy_samples = self.unisurf_sampler.merge_ray_samples_in_eculidean(
+            ray_bundle, occupancy_samples, voxel_samples
+        )
+
+        # save_points("p1.ply", voxel_samples.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
+        # save_points("p2.ply", occupancy_samples.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
+        # save_points("p3.ply", merged_samples.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
+        # breakpoint()
+
+        # save_points("p4.ply", importance_samples.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
+        # if self._step > 0:
+        #    exit(-1)
+
+        # save_points("merged.ply", merged_samples.frustums.get_start_positions().reshape(-1, 3).detach().cpu().numpy())
+
+        # breakpoint()
+
         # occupancy unisurf
         # field_outputs = self.occupancy_field(occupancy_samples, return_occupancy=True)
         # weights, transmittance = occupancy_samples.get_weights_and_transmittance_from_alphas(
         #    field_outputs[FieldHeadNames.OCCUPANCY]
         # )
-
+        # save_points("o.ply", occupancy_samples.frustums.get_positions().reshape(-1, 3).detach().cpu().numpy())
         if self.method == "neus":
             field_outputs = self.occupancy_field(occupancy_samples, return_alphas=True)
             weights, transmittance = occupancy_samples.get_weights_and_transmittance_from_alphas(
@@ -266,14 +391,15 @@ class DtoOModel(NerfactoModel):
             outputs["rgb"] = outputs["rgb"] + outputs["transmittance"][:, -1, :] * bg_rgb
 
         if self.training:
-            surface_points = surface_samples.frustums.get_positions().reshape(-1, 3)
+            # surface_points = surface_samples.frustums.get_positions().reshape(-1, 3)
 
-            surface_points_neig = surface_points + (torch.rand_like(surface_points) - 0.5) * 0.001
-            pp = torch.cat([surface_points, surface_points_neig], dim=0)
-            surface_grad = self.occupancy_field.gradient(pp)
-            surface_points_normal = torch.nn.functional.normalize(surface_grad, p=2, dim=-1)
+            # surface_points_neig = surface_points + (torch.rand_like(surface_points) - 0.5) * 0.001
+            # pp = torch.cat([surface_points, surface_points_neig], dim=0)
+            # surface_grad = self.occupancy_field.gradient(pp)
+            # surface_points_normal = torch.nn.functional.normalize(surface_grad, p=2, dim=-1)
 
-            outputs_occupancy.update({"surface_points_normal": surface_points_normal, "surface_grad": surface_grad})
+            # outputs_occupancy.update({"surface_points_normal": surface_points_normal, "surface_grad": surface_grad})
+            outputs_occupancy.update({"surface_grad": field_outputs[FieldHeadNames.GRADIENT]})
 
         outputs.update(outputs_occupancy)
         outputs.update(bg_outputs)
@@ -314,20 +440,20 @@ class DtoOModel(NerfactoModel):
             if self.use_nerfacto:
                 density_field_weights = outputs["weights_list"][-1]
                 loss_dict["sky_loss"] = (
-                    F.binary_cross_entropy(density_field_weights.sum(dim=1).clip(1e-3, 1.0 - 1e-3), sky_label) * 0.01
+                    F.binary_cross_entropy(density_field_weights.sum(dim=1).clip(1e-3, 1.0 - 1e-3), sky_label) * 0.1
                 )
 
             occupancy_field_weights = outputs["oweights"]
             loss_dict["osky_loss"] = (
-                F.binary_cross_entropy(occupancy_field_weights.sum(dim=1).clip(1e-3, 1.0 - 1e-3), sky_label) * 0.01
+                F.binary_cross_entropy(occupancy_field_weights.sum(dim=1).clip(1e-3, 1.0 - 1e-3), sky_label) * 0.1
             )
 
         if self.training:
-            surface_points_normal = outputs["surface_points_normal"]
-            N = surface_points_normal.shape[0] // 2
+            # surface_points_normal = outputs["surface_points_normal"]
+            # N = surface_points_normal.shape[0] // 2
 
-            diff_norm = torch.norm(surface_points_normal[:N] - surface_points_normal[N:], dim=-1)
-            loss_dict["normal_smoothness_loss"] = torch.mean(diff_norm) * 0.0001
+            # diff_norm = torch.norm(surface_points_normal[:N] - surface_points_normal[N:], dim=-1)
+            # loss_dict["normal_smoothness_loss"] = torch.mean(diff_norm) * 0.0001
 
             # eikonal loss
             surface_points_grad = outputs["surface_grad"]
@@ -336,7 +462,22 @@ class DtoOModel(NerfactoModel):
             # surface points loss
             surface_points_sdf = outputs["surface_sdf"]
             if surface_points_sdf is not None:
-                loss_dict["surface_sdf_loss"] = torch.abs(surface_points_sdf).mean() * 0.1
+                loss_dict["surface_sdf_loss"] = torch.abs(surface_points_sdf).mean() * 0.0
+
+            sparse_pts = batch["sparse_pts"].to(self.device)
+            sparse_pts, pts_weights = sparse_pts[:, :3], sparse_pts[:, 3:]
+
+            # filter norm
+            in_sphere = torch.norm(sparse_pts, dim=-1) < 1.0
+            sparse_pts = sparse_pts[in_sphere]
+            pts_weights = pts_weights[in_sphere]
+            pts_weights = torch.ones_like(pts_weights)
+            # print(in_sphere.float().mean())
+            # save_points("sa.ply", sparse_pts.cpu().numpy())
+            # breakpoint()
+            if sparse_pts.shape[0] > 0:
+                sparse_pts_sdf = self.occupancy_field.forward_geonetwork(sparse_pts)[:, 0]
+                loss_dict["sparse_pts_loss"] = (torch.abs(sparse_pts_sdf) * pts_weights).mean() * 0.0
 
         return loss_dict
 

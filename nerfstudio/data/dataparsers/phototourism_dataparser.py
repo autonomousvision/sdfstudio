@@ -23,7 +23,7 @@ from typing import Type
 import numpy as np
 import torch
 import yaml
-from rich.progress import Console
+from rich.progress import Console, track
 from typing_extensions import Literal
 
 from nerfstudio.cameras import camera_utils
@@ -34,13 +34,18 @@ from nerfstudio.data.dataparsers.base_dataparser import (
     DataparserOutputs,
 )
 from nerfstudio.data.scene_box import SceneBox
-from nerfstudio.data.utils.colmap_utils import read_cameras_binary, read_images_binary
+from nerfstudio.data.utils.colmap_utils import (
+    read_cameras_binary,
+    read_images_binary,
+    read_points3d_binary,
+)
+from nerfstudio.model_components.ray_samplers import save_points
 from nerfstudio.utils.images import BasicImages
 
 CONSOLE = Console(width=120)
 
 
-def get_masks(image_idx: int, masks, skys):
+def get_masks(image_idx: int, masks, skys, sparse_pts):
     """function to process additional mask information
 
     Args:
@@ -55,7 +60,12 @@ def get_masks(image_idx: int, masks, skys):
     # sky
     sky = skys[image_idx]
     sky = BasicImages([sky])
-    return {"mask": mask, "sky": sky}
+
+    # sparse_pts
+    pts = sparse_pts[image_idx]
+    pts = BasicImages([pts])
+
+    return {"mask": mask, "sky": sky, "sparse_pts": pts}
 
 
 @dataclass
@@ -105,12 +115,27 @@ class Phototourism(DataParser):
         with open(config_path, "r") as yamlfile:
             scene_config = yaml.load(yamlfile, Loader=yaml.FullLoader)
 
+        sfm_to_gt = np.array(scene_config["sfm2gt"])
+        gt_to_sfm = np.linalg.inv(sfm_to_gt)
+        sfm_vert1 = gt_to_sfm[:3, :3] @ np.array(scene_config["eval_bbx"][0]) + gt_to_sfm[:3, 3]
+        sfm_vert2 = gt_to_sfm[:3, :3] @ np.array(scene_config["eval_bbx"][1]) + gt_to_sfm[:3, 3]
+        bbx_min = np.minimum(sfm_vert1, sfm_vert2)
+        bbx_max = np.maximum(sfm_vert1, sfm_vert2)
+
         image_filenames = []
         poses = []
 
         with CONSOLE.status(f"[bold green]Reading phototourism images and poses for {split} split...") as _:
             cams = read_cameras_binary(self.data / "dense/sparse/cameras.bin")
             imgs = read_images_binary(self.data / "dense/sparse/images.bin")
+            pts3d = read_points3d_binary(self.data / "dense/sparse/points3D.bin")
+
+        # key point depth
+        pts3d_array = torch.ones(max(pts3d.keys()) + 1, 4)
+        error_array = torch.ones(max(pts3d.keys()) + 1, 1)
+        for pts_id, pts in track(pts3d.items(), description="create 3D points", transient=True):
+            pts3d_array[pts_id, :3] = torch.from_numpy(pts.xyz)
+            error_array[pts_id, 0] = torch.from_numpy(pts.error)
 
         poses = []
         fxs = []
@@ -122,6 +147,7 @@ class Phototourism(DataParser):
         semantic_filenames = []
         masks = []
         skys = []
+        sparse_pts = []
 
         flip = torch.eye(3)
         flip[0, 0] = -1.0
@@ -156,6 +182,22 @@ class Phototourism(DataParser):
             semantic = np.load(semantic_filenames[-1])["arr_0"]
             is_sky = semantic == 2  # sky id is 2
             skys.append(torch.from_numpy(is_sky).unsqueeze(-1))
+
+            # load sparse 3d points for each view
+            # visualize pts3d for each image
+            valid_3d_mask = img.point3D_ids != -1
+            point3d_ids = img.point3D_ids[valid_3d_mask]
+            img_p3d = pts3d_array[point3d_ids]
+            img_err = error_array[point3d_ids]
+            # img_p3d = img_p3d[img_err[:, 0] < torch.median(img_err)]
+
+            # weight term as in NeuralRecon-W
+            err_mean = img_err.mean()
+            weight = 2 * np.exp(-((img_err / err_mean) ** 2))
+
+            img_p3d[:, 3:] = weight
+
+            sparse_pts.append(img_p3d)
 
         poses = torch.stack(poses).float()
         poses[..., 1:3] *= -1
@@ -203,11 +245,86 @@ class Phototourism(DataParser):
         poses[:, :3, 3] -= origin
         poses[:, :3, 3] *= 1.0 / (radius * 1.01)  # enlarge the radius a little bit
 
-        poses = camera_utils.auto_orient_and_center_poses(
+        poses, transform = camera_utils.auto_orient_and_center_poses(
             poses,
             method=self.config.orientation_method,
             center_poses=False,
         )
+
+        # scale pts accordingly
+        for pts in sparse_pts:
+            pts[:, :3] -= origin
+            pts[:, :3] *= 1.0 / (radius * 1.01)  # should be the same as pose preprocessing
+            pts[:, :3] = pts[:, :3] @ transform[:3, :3].t() + transform[:3, 3:].t()
+
+        # create occupancy grid from sparse points
+        points_ori = []
+        min_track_length = 10
+        for _, p in pts3d.items():
+            if p.point2D_idxs.shape[0] > min_track_length:
+                points_ori.append(p.xyz)
+        points_ori = np.array(points_ori)
+        save_points("nori_10.ply", points_ori)
+
+        # filter with bbox
+        # normalize cropped area to [-1, -1]
+        scene_origin = bbx_min + (bbx_max - bbx_min) / 2
+
+        points_normalized = (points_ori - scene_origin) / (bbx_max - bbx_min)
+        # filter out points out of [-1, 1]
+        mask = np.prod((points_normalized > -1), axis=-1, dtype=bool) & np.prod(
+            (points_normalized < 1), axis=-1, dtype=bool
+        )
+        points_ori = points_ori[mask]
+
+        save_points("nori_10_filterbbox.ply", points_ori)
+
+        points_ori = torch.from_numpy(points_ori).float()
+
+        # scale pts accordingly
+        points_ori -= origin
+        points_ori[:, :3] *= 1.0 / (radius * 1.01)  # should be the same as pose preprocessing
+        points_ori[:, :3] = points_ori[:, :3] @ transform[:3, :3].t() + transform[:3, 3:].t()
+
+        print(points_ori.shape)
+
+        # expand and quantify
+
+        offset = torch.linspace(-1, 1.0, 3)
+        offset_cube = torch.meshgrid(offset, offset, offset)
+        offset_cube = torch.stack(offset_cube, dim=-1).reshape(-1, 3)
+
+        voxel_size = 0.25 / (radius * 1.01)
+        offset_cube *= voxel_size  # voxel size
+        expand_points = points_ori[:, None, :] + offset_cube[None]
+        expand_points = expand_points.reshape(-1, 3)
+        save_points("expand_points.ply", expand_points.numpy())
+
+        # filter
+        # filter out points out of [-1, 1]
+        mask = torch.prod((expand_points > -1.0), axis=-1, dtype=torch.bool) & torch.prod(
+            (expand_points < 1.0), axis=-1, dtype=torch.bool
+        )
+        filtered_points = expand_points[mask]
+        save_points("filtered_points.ply", filtered_points.numpy())
+
+        grid_size = 32
+        voxel_size = 2.0 / grid_size
+        quantified_points = torch.floor((filtered_points + 1.0) * grid_size // 2)
+
+        index = quantified_points[:, 0] * grid_size**2 + quantified_points[:, 1] * grid_size + quantified_points[:, 2]
+
+        offset = torch.linspace(-1.0 + voxel_size / 2.0, 1.0 - voxel_size / 2.0, grid_size)
+        x, y, z = torch.meshgrid(offset, offset, offset, indexing="ij")
+        offset_cube = torch.stack([x, y, z], dim=-1).reshape(-1, 3)
+
+        # xyz
+        mask = torch.zeros(grid_size**3, dtype=torch.bool)
+        mask[index.long()] = True
+
+        points_valid = offset_cube[mask]
+        save_points("quantified_points.ply", points_valid.numpy())
+        # breakpoint()
 
         # in x,y,z order
         # assumes that the scene is centered at the origin
@@ -217,6 +334,7 @@ class Phototourism(DataParser):
                 [[-aabb_scale, -aabb_scale, -aabb_scale], [aabb_scale, aabb_scale, aabb_scale]], dtype=torch.float32
             )
         )
+        scene_box = mask
 
         cameras = Cameras(
             camera_to_worlds=poses[:, :3, :4],
@@ -227,10 +345,16 @@ class Phototourism(DataParser):
             camera_type=CameraType.PERSPECTIVE,
         )
 
+        # for debug
+        for _ in range(10):
+            print("==================================================")
+
+        indices = indices[::20]
         cameras = cameras[indices]
         image_filenames = [image_filenames[i] for i in indices]
         masks = [masks[i] for i in indices]
         skys = [skys[i] for i in indices]
+        sparse_pts = [sparse_pts[i] for i in indices]
 
         assert len(cameras) == len(image_filenames)
 
@@ -238,7 +362,9 @@ class Phototourism(DataParser):
             image_filenames=image_filenames,
             cameras=cameras,
             scene_box=scene_box,
-            additional_inputs={"masks": {"func": get_masks, "kwargs": {"masks": masks, "skys": skys}}},
+            additional_inputs={
+                "masks": {"func": get_masks, "kwargs": {"masks": masks, "skys": skys, "sparse_pts": sparse_pts}}
+            },
         )
 
         return dataparser_outputs
