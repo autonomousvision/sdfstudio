@@ -346,10 +346,10 @@ class Phototourism(DataParser):
         )
 
         # for debug
-        for _ in range(10):
-            print("==================================================")
+        # for _ in range(10):
+        #    print("==================================================")
 
-        indices = indices[::20]
+        # indices = indices[::20]
         cameras = cameras[indices]
         image_filenames = [image_filenames[i] for i in indices]
         masks = [masks[i] for i in indices]

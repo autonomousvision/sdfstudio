@@ -199,7 +199,7 @@ class DtoOModel(NerfactoModel):
             fine_grid_size = 16
             offset = torch.linspace(-1.0, 1.0, fine_grid_size * 2 + 1, device=self.device)[1::2]
             x, y, z = torch.meshgrid(offset, offset, offset, indexing="ij")
-            fine_offset_cube = torch.stack([x, y, z], dim=-1).reshape(-1, 3) * voxel_size
+            fine_offset_cube = torch.stack([x, y, z], dim=-1).reshape(-1, 3) * voxel_size * 0.5
 
             # coarse grid coordinates
             offset = torch.linspace(-1.0 + voxel_size / 2.0, 1.0 - voxel_size / 2.0, grid_size, device=self.device)
@@ -234,6 +234,13 @@ class DtoOModel(NerfactoModel):
                 .reshape(grid_size * fine_grid_size, grid_size * fine_grid_size, grid_size * fine_grid_size)
                 .contiguous()
             )
+
+            offset = torch.linspace(-1.0, 1.0, fine_grid_size * grid_size, device=self.device)
+            x, y, z = torch.meshgrid(offset, offset, offset, indexing="ij")
+            grid_coord = torch.stack([x, y, z], dim=-1).reshape(-1, 3)
+
+            # save_points("fine_voxel_valid.ply", grid_coord[self._binary_fine.reshape(-1)].cpu().numpy())
+            # breakpoint()
 
         if self._binary_fine is not None:
             # near and far from occupancy grids
@@ -440,12 +447,12 @@ class DtoOModel(NerfactoModel):
             if self.use_nerfacto:
                 density_field_weights = outputs["weights_list"][-1]
                 loss_dict["sky_loss"] = (
-                    F.binary_cross_entropy(density_field_weights.sum(dim=1).clip(1e-3, 1.0 - 1e-3), sky_label) * 0.1
+                    F.binary_cross_entropy(density_field_weights.sum(dim=1).clip(1e-3, 1.0 - 1e-3), sky_label) * 0.01
                 )
 
             occupancy_field_weights = outputs["oweights"]
             loss_dict["osky_loss"] = (
-                F.binary_cross_entropy(occupancy_field_weights.sum(dim=1).clip(1e-3, 1.0 - 1e-3), sky_label) * 0.1
+                F.binary_cross_entropy(occupancy_field_weights.sum(dim=1).clip(1e-3, 1.0 - 1e-3), sky_label) * 0.01
             )
 
         if self.training:
