@@ -1,7 +1,7 @@
-import torch
 import numpy as np
-from skimage import measure
+import torch
 import trimesh
+from skimage import measure
 
 avg_pool_3d = torch.nn.AvgPool3d(2, stride=2)
 upsample = torch.nn.Upsample(scale_factor=2, mode="nearest")
@@ -116,7 +116,9 @@ def get_surface_sliding(sdf, resolution=512, grid_boundary=[-0.5, 0.5], return_m
 
 
 @torch.no_grad()
-def get_surface_occupancy(occupancy_fn, resolution=512, grid_boundary=[-0.5, 0.5], return_mesh=False, level=0):
+def get_surface_occupancy(
+    occupancy_fn, resolution=512, grid_boundary=[-0.5, 0.5], return_mesh=False, level=0, device=None
+):
     grid_min = [grid_boundary[0], grid_boundary[0], grid_boundary[0]]
     grid_max = [grid_boundary[1], grid_boundary[1], grid_boundary[1]]
     N = resolution
@@ -125,7 +127,7 @@ def get_surface_occupancy(occupancy_fn, resolution=512, grid_boundary=[-0.5, 0.5
     zs = np.linspace(grid_min[2], grid_max[2], N)
 
     xx, yy, zz = np.meshgrid(xs, ys, zs, indexing="ij")
-    points = torch.tensor(np.vstack([xx.ravel(), yy.ravel(), zz.ravel()]).T, dtype=torch.float).cuda()
+    points = torch.tensor(np.vstack([xx.ravel(), yy.ravel(), zz.ravel()]).T, dtype=torch.float).to(device=device)
 
     def evaluate(points):
         z = []

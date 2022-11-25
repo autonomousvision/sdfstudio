@@ -146,7 +146,9 @@ class SphereCollider(SceneBoxCollider):
             breakpoint()
             exit()
 
-        sphere_intersections = torch.sqrt(under_sqrt) * torch.Tensor([-1, 1]).cuda().float() - ray_cam_dot
+        sphere_intersections = (
+            torch.sqrt(under_sqrt) * torch.Tensor([-1, 1]).float().to(under_sqrt.device) - ray_cam_dot
+        )
         sphere_intersections = sphere_intersections.clamp_min(0.01)
 
         ray_bundle.nears = sphere_intersections[:, 0:1]

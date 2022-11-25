@@ -88,6 +88,8 @@ class DtoOModel(NerfactoModel):
         self.grid = nerfacc.OccupancyGrid(aabb.reshape(-1), resolution=32)
         self._binary = self.scene_box.reshape(32, 32, 32).contiguous()
         self._binary_fine = None
+        self.rank = torch.distributed.get_rank()
+        print("self", self.rank)
 
         # Occupancy
         self.occupancy_field = self.config.sdf_field.setup(
@@ -177,7 +179,7 @@ class DtoOModel(NerfactoModel):
             ray_bundle.nears[:, 0].contiguous(),
             ray_bundle.fars[:, 0].contiguous(),
             self.grid.roi_aabb.contiguous(),
-            self._binary.cuda(),
+            self._binary.to(ray_bundle.origins.device),
             self.grid.contraction_type.to_cpp_version(),
             1e-2,  # large value for coarse voxels
             0.0,
@@ -242,8 +244,8 @@ class DtoOModel(NerfactoModel):
             offset = torch.linspace(-1.0, 1.0, fine_grid_size * grid_size, device=self.device)
             x, y, z = torch.meshgrid(offset, offset, offset, indexing="ij")
             grid_coord = torch.stack([x, y, z], dim=-1).reshape(-1, 3)
-
-            save_points("fine_voxel_valid.ply", grid_coord[self._binary_fine.reshape(-1)].cpu().numpy())
+            if self.rank == 0:
+                save_points("fine_voxel_valid.ply", grid_coord[self._binary_fine.reshape(-1)].cpu().numpy())
             # breakpoint()
 
         if self._binary_fine is not None:
@@ -341,10 +343,12 @@ class DtoOModel(NerfactoModel):
             # surface_samples = self.surface_sampler(ray_bundle, occupancy_samples, weights, num_samples=8)
 
             self.step_counter += 1
-            if self.step_counter % 5000 == 0:
+            if self.step_counter % 5000 == 0 and self.rank == 0:
 
                 save_points("a.ply", occupancy_samples.frustums.get_positions().reshape(-1, 3).detach().cpu().numpy())
-                get_surface_occupancy(occupancy_fn=lambda x: self.occupancy_field.forward_geonetwork(x)[:, 0])
+                get_surface_occupancy(
+                    occupancy_fn=lambda x: self.occupancy_field.forward_geonetwork(x)[:, 0], device=self.device
+                )
                 # breakpoint()
 
         bg_transmittance = transmittance[:, -1, :]

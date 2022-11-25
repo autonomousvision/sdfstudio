@@ -16,10 +16,10 @@
 Collection of sampling strategies
 """
 
+import math
 from abc import abstractmethod
 from typing import Callable, List, Optional, Tuple, Union
 
-import math
 import nerfacc
 import torch
 from nerfacc import OccupancyGrid
@@ -708,7 +708,7 @@ class ErrorBoundedSampler(Sampler):
         a, b, c = dists[:, :-1], d[:, :-1].abs(), d[:, 1:].abs()
         first_cond = a.pow(2) + b.pow(2) <= c.pow(2)
         second_cond = a.pow(2) + c.pow(2) <= b.pow(2)
-        d_star = torch.zeros(ray_samples.shape[0], ray_samples.shape[1] - 1).cuda()
+        d_star = torch.zeros(ray_samples.shape[0], ray_samples.shape[1] - 1).to(d.device)
         d_star[first_cond] = b[first_cond]
         d_star[second_cond] = c[second_cond]
         s = (a + b + c) / 2.0
@@ -794,8 +794,8 @@ def save_points(path_save, pts, colors=None, normals=None, BRG2RGB=False):
     if colors is not None:
         assert colors.shape[1] == 3
     assert pts.shape[1] == 3
-    import open3d as o3d
     import numpy as np
+    import open3d as o3d
 
     cloud = o3d.geometry.PointCloud()
     cloud.points = o3d.utility.Vector3dVector(pts)

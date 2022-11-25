@@ -49,7 +49,7 @@ class LaplaceDensity(nn.Module):  # alpha * Laplace(loc=0, scale=beta).cdf(-sdf)
 
     def __init__(self, init_val, beta_min=0.0001):
         super().__init__()
-        self.beta_min = torch.tensor(beta_min).cuda()
+        self.register_parameter("beta_min", nn.Parameter(beta_min * torch.ones(1), requires_grad=False))
         self.register_parameter("beta", nn.Parameter(init_val * torch.ones(1), requires_grad=True))
 
     def forward(
@@ -74,7 +74,7 @@ class SigmoidDensity(nn.Module):  # alpha * Laplace(loc=0, scale=beta).cdf(-sdf)
 
     def __init__(self, init_val, beta_min=0.0001):
         super().__init__()
-        self.beta_min = torch.tensor(beta_min).cuda()
+        self.register_parameter("beta_min", nn.Parameter(beta_min * torch.ones(1), requires_grad=False))
         self.register_parameter("beta", nn.Parameter(init_val * torch.ones(1), requires_grad=True))
 
     def forward(
