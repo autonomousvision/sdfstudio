@@ -187,8 +187,9 @@ class DtoOModel(NerfactoModel):
         # tt_ends = nerfacc.unpack_data(packed_info, t_ends)
 
         hit_grid = (tt_starts > 0).any(dim=1)[:, 0]
-        ray_bundle.nears[hit_grid] = tt_starts[hit_grid][:, 0]
-        ray_bundle.fars[hit_grid] = tt_starts[hit_grid].max(dim=1)[0]
+        if hit_grid.float().sum() > 0:
+            ray_bundle.nears[hit_grid] = tt_starts[hit_grid][:, 0]
+            ray_bundle.fars[hit_grid] = tt_starts[hit_grid].max(dim=1)[0]
 
         # sample uniformly with currently nears and far
         voxel_samples = self.uniform_sampler(ray_bundle, num_samples=10)
