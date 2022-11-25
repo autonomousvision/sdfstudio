@@ -36,6 +36,7 @@ from nerfstudio.engine.callbacks import (
 from nerfstudio.field_components.field_heads import FieldHeadNames
 from nerfstudio.field_components.spatial_distortions import SceneContraction
 from nerfstudio.fields.sdf_field import SDFFieldConfig
+from nerfstudio.model_components.losses import L1Loss
 from nerfstudio.model_components.ray_samplers import (
     ErrorBoundedSampler,
     LinearDisparitySampler,
@@ -133,6 +134,8 @@ class DtoOModel(NerfactoModel):
         self.use_nerfacto = False
         self.method = "neus"
 
+        self.rgb_loss = L1Loss()
+
     def get_training_callbacks(
         self, training_callback_attributes: TrainingCallbackAttributes
     ) -> List[TrainingCallback]:
@@ -176,12 +179,12 @@ class DtoOModel(NerfactoModel):
             self.grid.roi_aabb.contiguous(),
             self._binary.cuda(),
             self.grid.contraction_type.to_cpp_version(),
-            1e-3,
+            1e-2,  # large value for coarse voxels
             0.0,
         )
 
-        tt_starts = nerfacc.unpack_data(packed_info, t_starts, n_samples=1024)
-        # tt_ends = nerfacc.unpack_data(packed_info, t_ends, n_samples=1024)
+        tt_starts = nerfacc.unpack_data(packed_info, t_starts)
+        # tt_ends = nerfacc.unpack_data(packed_info, t_ends)
 
         hit_grid = (tt_starts > 0).any(dim=1)[:, 0]
         ray_bundle.nears[hit_grid] = tt_starts[hit_grid][:, 0]
@@ -239,7 +242,7 @@ class DtoOModel(NerfactoModel):
             x, y, z = torch.meshgrid(offset, offset, offset, indexing="ij")
             grid_coord = torch.stack([x, y, z], dim=-1).reshape(-1, 3)
 
-            # save_points("fine_voxel_valid.ply", grid_coord[self._binary_fine.reshape(-1)].cpu().numpy())
+            save_points("fine_voxel_valid.ply", grid_coord[self._binary_fine.reshape(-1)].cpu().numpy())
             # breakpoint()
 
         if self._binary_fine is not None:
@@ -252,17 +255,20 @@ class DtoOModel(NerfactoModel):
                 self.grid.roi_aabb.contiguous(),
                 self._binary_fine,
                 self.grid.contraction_type.to_cpp_version(),
-                1e-3,
+                1e-3,  # small value for fine voxels
                 0.0,
             )
 
-            tt_starts = nerfacc.unpack_data(packed_info, t_starts, n_samples=1024)
+            tt_starts = nerfacc.unpack_data(packed_info, t_starts)
             # tt_ends = nerfacc.unpack_data(packed_info, t_ends, n_samples=1024)
 
             # update with near and far
             hit_grid = (tt_starts > 0).any(dim=1)[:, 0]
-            ray_bundle.nears[hit_grid] = tt_starts[hit_grid][:, 0] - 0.03
-            ray_bundle.fars[hit_grid] = tt_starts[hit_grid][:, 0] + 0.03
+            if hit_grid.float().sum() > 0:
+                ray_bundle.nears[hit_grid] = tt_starts[hit_grid][:, 0] - 0.03
+                ray_bundle.fars[hit_grid] = tt_starts[hit_grid][:, 0] + 0.03
+            else:
+                print("waring not intersection")
             print("sampling around surfaces")
 
         if self.use_nerfacto:
@@ -289,14 +295,16 @@ class DtoOModel(NerfactoModel):
                     ray_bundle, density_fn=self.occupancy_field.laplace_density, sdf_fn=self.occupancy_field.get_sdf
                 )
 
+        # save_points("p2.ply", occupancy_samples.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
+
         # merge samples
         occupancy_samples = self.unisurf_sampler.merge_ray_samples_in_eculidean(
             ray_bundle, occupancy_samples, voxel_samples
         )
 
         # save_points("p1.ply", voxel_samples.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
-        # save_points("p2.ply", occupancy_samples.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
-        # save_points("p3.ply", merged_samples.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
+
+        # save_points("p3.ply", occupancy_samples.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
         # breakpoint()
 
         # save_points("p4.ply", importance_samples.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
@@ -324,15 +332,17 @@ class DtoOModel(NerfactoModel):
                 field_outputs[FieldHeadNames.DENSITY]
             )
 
+        # save_points("a.ply", occupancy_samples.frustums.get_positions().reshape(-1, 3).detach().cpu().numpy())
+
         if self.training:
             # we should sample here before we change the near-far plane for ray_bundle
             # sample surface points according to distribution
-            surface_samples = self.surface_sampler(ray_bundle, occupancy_samples, weights, num_samples=8)
+            # surface_samples = self.surface_sampler(ray_bundle, occupancy_samples, weights, num_samples=8)
 
             self.step_counter += 1
             if self.step_counter % 5000 == 0:
 
-                save_points("a.ply", surface_samples.frustums.get_positions().reshape(-1, 3).detach().cpu().numpy())
+                save_points("a.ply", occupancy_samples.frustums.get_positions().reshape(-1, 3).detach().cpu().numpy())
                 get_surface_occupancy(occupancy_fn=lambda x: self.occupancy_field.forward_geonetwork(x)[:, 0])
                 # breakpoint()
 
