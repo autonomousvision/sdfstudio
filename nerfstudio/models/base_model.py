@@ -69,6 +69,8 @@ class Model(nn.Module):
         config: ModelConfig,
         scene_box: SceneBox,
         num_train_data: int,
+        world_size: int = 1,
+        local_rank: int = 0,
         **kwargs,
     ) -> None:
         super().__init__()
@@ -77,6 +79,8 @@ class Model(nn.Module):
         self.num_train_data = num_train_data
         self.kwargs = kwargs
         self.collider = None
+        self.world_size = world_size
+        self.local_rank = local_rank
 
         self.populate_modules()  # populate the modules
         self.callbacks = None

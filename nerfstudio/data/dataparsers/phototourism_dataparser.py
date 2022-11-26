@@ -259,7 +259,7 @@ class Phototourism(DataParser):
 
         # create occupancy grid from sparse points
         points_ori = []
-        min_track_length = 10
+        min_track_length = scene_config["min_track_length"]
         for _, p in pts3d.items():
             if p.point2D_idxs.shape[0] > min_track_length:
                 points_ori.append(p.xyz)
@@ -294,7 +294,7 @@ class Phototourism(DataParser):
         offset_cube = torch.meshgrid(offset, offset, offset)
         offset_cube = torch.stack(offset_cube, dim=-1).reshape(-1, 3)
 
-        voxel_size = 0.25 / (radius * 1.01)
+        voxel_size = scene_config["voxel_size"] / (radius * 1.01)
         offset_cube *= voxel_size  # voxel size
         expand_points = points_ori[:, None, :] + offset_cube[None]
         expand_points = expand_points.reshape(-1, 3)

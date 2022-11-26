@@ -88,8 +88,8 @@ class DtoOModel(NerfactoModel):
         self.grid = nerfacc.OccupancyGrid(aabb.reshape(-1), resolution=32)
         self._binary = self.scene_box.reshape(32, 32, 32).contiguous()
         self._binary_fine = None
-        self.rank = torch.distributed.get_rank()
-        print("self", self.rank)
+        # self.rank = torch.distributed.get_rank()
+        print("self", self.local_rank)
 
         # Occupancy
         self.occupancy_field = self.config.sdf_field.setup(
@@ -199,6 +199,7 @@ class DtoOModel(NerfactoModel):
         nears = ray_bundle.nears.clone()
         fars = ray_bundle.fars.clone()
 
+        # bootstrap should needs longer if using only one gpus
         if self.training and self.step_counter > 5000 and self.step_counter % 5000 == 1:
             grid_size = 32
             voxel_size = 2.0 / 32
@@ -241,10 +242,10 @@ class DtoOModel(NerfactoModel):
                 .contiguous()
             )
 
-            offset = torch.linspace(-1.0, 1.0, fine_grid_size * grid_size, device=self.device)
+            offset = torch.linspace(-1.0, 1.0, fine_grid_size * grid_size * 2 + 1, device=self.device)[1::2]
             x, y, z = torch.meshgrid(offset, offset, offset, indexing="ij")
             grid_coord = torch.stack([x, y, z], dim=-1).reshape(-1, 3)
-            if self.rank == 0:
+            if self.local_rank == 0:
                 save_points("fine_voxel_valid.ply", grid_coord[self._binary_fine.reshape(-1)].cpu().numpy())
             # breakpoint()
 
@@ -343,7 +344,7 @@ class DtoOModel(NerfactoModel):
             # surface_samples = self.surface_sampler(ray_bundle, occupancy_samples, weights, num_samples=8)
 
             self.step_counter += 1
-            if self.step_counter % 5000 == 0 and self.rank == 0:
+            if self.step_counter % 5000 == 0 and self.local_rank == 0:
 
                 save_points("a.ply", occupancy_samples.frustums.get_positions().reshape(-1, 3).detach().cpu().numpy())
                 get_surface_occupancy(
@@ -404,6 +405,11 @@ class DtoOModel(NerfactoModel):
             "onormal": normal,
             "oweights": weights,
         }
+
+        # hitting information
+        start_points = occupancy_samples.frustums.get_positions()[:, 0]
+        end_points = occupancy_samples.frustums.get_positions()[:, -1]
+        outputs_occupancy.update({"start_points": start_points, "end_points": end_points})
 
         if self.training:
             outputs_occupancy.update({"surface_sdf": surface_sdf})
@@ -544,5 +550,12 @@ class DtoOModel(NerfactoModel):
         images_dict.update(
             {"oimg": combined_rgb, "oaccumulation": combined_acc, "odepth": combined_depth, "onormal": combined_normal}
         )
+
+        # save hitting
+        if "start_points" in outputs:
+            start_points = outputs["start_points"]
+            end_points = outputs["end_points"]
+            save_points("starts.ply", start_points.cpu().numpy().reshape(-1, 3))
+            save_points("ends.ply", end_points.cpu().numpy().reshape(-1, 3))
 
         return metrics_dict, images_dict
