@@ -31,7 +31,9 @@ class ExtractMesh:
         _, pipeline, _ = eval_setup(self.load_config)
 
         get_surface_sliding(
-            sdf=lambda x: pipeline.model.field.forward_geonetwork(x)[:, 0].contiguous(), resolution=1024
+            sdf=lambda x: pipeline.model.field.forward_geonetwork(x)[:, 0].contiguous(),
+            resolution=1024,
+            grid_boundary=[-1.0, 1.0],
         )
 
         # resolution=resolution,

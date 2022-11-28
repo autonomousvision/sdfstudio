@@ -57,9 +57,9 @@ class InputDataset(Dataset):
         image_filename = self.dataparser_outputs.image_filenames[image_idx]
         pil_image = Image.open(image_filename)
         image = np.array(pil_image, dtype="uint8")  # shape is (h, w, 3 or 4)
-        mask_filename = str(image_filename).replace("dense/images", "masks").replace(".jpg", ".npy")
-        mask = np.load(mask_filename)
-        image = image * mask[..., None]
+        # mask_filename = str(image_filename).replace("dense/images", "masks").replace(".jpg", ".npy")
+        # mask = np.load(mask_filename)
+        # image = image * mask[..., None]
 
         assert len(image.shape) == 3
         assert image.dtype == np.uint8
