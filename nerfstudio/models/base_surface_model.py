@@ -100,12 +100,13 @@ class SurfaceModel(Model):
         """Set the fields and modules."""
         super().populate_modules()
 
-        scene_contraction = SceneContraction(order=float("inf"))
+        self.scene_contraction = SceneContraction(order=float("inf"))
 
+        # Can we also use contraction for sdf?
         # Fields
         self.field = self.config.sdf_field.setup(
             aabb=self.scene_box.aabb,
-            spatial_distortion=scene_contraction,
+            spatial_distortion=self.scene_contraction,
             num_images=self.num_train_data,
             use_average_appearance_embedding=self.config.use_average_appearance_embedding,
         )

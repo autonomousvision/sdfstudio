@@ -86,7 +86,7 @@ class DtoOModel(NerfactoModel):
         aabb = torch.tensor(aabb, dtype=torch.float32)
 
         self.grid = nerfacc.OccupancyGrid(aabb.reshape(-1), resolution=32)
-        self._binary = self.scene_box.reshape(32, 32, 32).contiguous()
+        self._binary = self.scene_box.coarse_binary_gird.reshape(32, 32, 32).contiguous()
         self._binary_fine = None
         # self.rank = torch.distributed.get_rank()
         print("self", self.local_rank)

@@ -17,7 +17,7 @@ Dataset input structures.
 """
 
 from dataclasses import dataclass
-from typing import Dict, Union
+from typing import Dict, Optional, Union
 
 import torch
 from torchtyping import TensorType
@@ -31,6 +31,8 @@ class SceneBox:
     """aabb: axis-aligned bounding box.
     aabb[0] is the minimum (x,y,z) point.
     aabb[1] is the maximum (x,y,z) point."""
+    coarse_binary_gird: Optional[torch.Tensor] = None
+    """coarse binary grid computed from sparse colmap point cloud, currently only used in neuralrecon in the wild"""
 
     def get_diagonal_length(self):
         """Returns the longest diagonal length."""

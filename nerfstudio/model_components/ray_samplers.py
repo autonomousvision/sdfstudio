@@ -1146,3 +1146,177 @@ class UniSurfSampler(Sampler):
     ):
         """run secant method to refine surface points"""
         raise NotImplementedError
+
+
+class NeuralReconWSampler(Sampler):
+    """Voxel surface guided sampler in NeuralReconW."""
+
+    def __init__(
+        self,
+        aabb,
+        coarse_binary_grid,
+        coarse_resolution: int = 32,
+        fine_resolution: int = 512,
+        num_samples: int = 8,
+        num_samples_importance: int = 16,
+        num_samples_boundary: int = 10,
+        steps_per_grid_update: int = 5000,
+        local_rank: int = 0,
+        single_jitter: bool = False,
+    ) -> None:
+        super().__init__()
+        self.aabb = aabb
+        self.coarse_resolution = coarse_resolution
+        self.fine_resolution = fine_resolution
+        self.num_samples = num_samples
+        self.num_samples_importance = num_samples_importance
+        self.num_samples_boundary = num_samples_boundary
+        self.single_jitter = single_jitter
+        self.steps_per_grid_update = steps_per_grid_update
+        self.local_rank = local_rank
+
+        # TODO remvoe 2.0 and create cube in the initialization
+        self.grid_size = self.coarse_resolution
+        self.voxel_size = 2.0 / self.grid_size
+        self.fine_grid_size = self.fine_resolution // self.grid_size
+
+        # for voxel guided sampling
+        self.uniform_sampler = UniformSampler(single_jitter=False)
+
+        # for surface guided sampling
+        self.neus_sampler = NeuSSampler(
+            num_samples=num_samples,
+            num_samples_importance=num_samples_importance,
+            num_samples_outside=0,
+            num_upsample_steps=2,
+            base_variance=512,
+        )
+
+        # for merge samples
+        self.unisurf_sampler = UniSurfSampler()
+
+        self.grid = nerfacc.OccupancyGrid(aabb.reshape(-1), resolution=self.coarse_resolution)
+        self._binary = coarse_binary_grid.reshape(
+            self.coarse_resolution, self.coarse_resolution, self.coarse_resolution
+        ).contiguous()
+        self._binary_fine = None
+
+        self.init_grid_coordinate()
+
+    def init_grid_coordinate(self):
+        # fine grid coordinates in each coarse voxel
+        offset = torch.linspace(-1.0, 1.0, self.fine_grid_size * 2 + 1)[1::2]
+        x, y, z = torch.meshgrid(offset, offset, offset, indexing="ij")
+        fine_offset_cube = torch.stack([x, y, z], dim=-1).reshape(-1, 3) * self.voxel_size * 0.5
+
+        # coarse grid coordinates
+        offset = torch.linspace(-1.0 + self.voxel_size / 2.0, 1.0 - self.voxel_size / 2.0, self.grid_size)
+        x, y, z = torch.meshgrid(offset, offset, offset, indexing="ij")
+        coarse_offset_cube = torch.stack([x, y, z], dim=-1).reshape(-1, 3)
+
+        self.register_buffer("coarse_offset_cube", coarse_offset_cube)
+        self.register_buffer("fine_offset_cube", fine_offset_cube)
+
+    @torch.no_grad()
+    def update_binary_grid(self, step, sdf_fn=None):
+        assert sdf_fn is not None
+        # bootstrap should needs longer if using only one gpus
+        if step >= self.steps_per_grid_update and step % self.steps_per_grid_update == 0:
+            device = self.coarse_offset_cube.device
+
+            mask = torch.zeros((self.grid_size**3, self.fine_grid_size**3), dtype=torch.bool, device=device)
+
+            occupied_voxel = self.coarse_offset_cube[self._binary.reshape(-1)]
+            fine_voxel = occupied_voxel[:, None] + self.fine_offset_cube[None, :]
+
+            fine_voxel = fine_voxel.reshape(-1, 3)
+            # save_points("fine_voxel.ply", fine_voxel.cpu().numpy())
+
+            def evaluate(points):
+                z = []
+                for _, pnts in enumerate(torch.split(points, 100000, dim=0)):
+                    z.append(sdf_fn(pnts))
+                z = torch.cat(z, axis=0)
+                return z
+
+            sdf = evaluate(fine_voxel)
+            sdf = sdf.reshape(occupied_voxel.shape[0], self.fine_grid_size**3)
+            sdf_mask = sdf <= 0.0
+            mask[self._binary.reshape(-1)] = sdf_mask
+
+            self._binary_fine = (
+                mask.reshape([self.grid_size] * 3 + [self.fine_grid_size] * 3)
+                .permute(0, 3, 1, 4, 2, 5)
+                .reshape(self.fine_resolution, self.fine_resolution, self.fine_resolution)
+                .contiguous()
+            )
+
+            # offset = torch.linspace(-1.0, 1.0, self.fine_resolution * 2 + 1, device=device)[1::2]
+            # x, y, z = torch.meshgrid(offset, offset, offset, indexing="ij")
+            # grid_coord = torch.stack([x, y, z], dim=-1).reshape(-1, 3)
+            # save_points("fine_voxel_valid.ply", grid_coord[self._binary_fine.reshape(-1)].cpu().numpy())
+
+    def generate_ray_samples(
+        self,
+        ray_bundle: Optional[RayBundle] = None,
+        sdf_fn: Optional[Callable] = None,
+    ) -> Union[Tuple[RaySamples, torch.Tensor], RaySamples]:
+        assert ray_bundle is not None
+        assert sdf_fn is not None
+
+        # near and far from occupancy grids
+        packed_info, _, t_starts, t_ends = nerfacc.cuda.ray_marching(
+            ray_bundle.origins.contiguous(),
+            ray_bundle.directions.contiguous(),
+            ray_bundle.nears[:, 0].contiguous(),
+            ray_bundle.fars[:, 0].contiguous(),
+            self.grid.roi_aabb.contiguous(),
+            self._binary.to(ray_bundle.origins.device),
+            self.grid.contraction_type.to_cpp_version(),
+            1e-2,  # large value for coarse voxels
+            0.0,
+        )
+
+        tt_starts = nerfacc.unpack_data(packed_info, t_starts)
+        tt_ends = nerfacc.unpack_data(packed_info, t_ends)
+
+        hit_grid = (tt_starts > 0).any(dim=1)[:, 0]
+        if hit_grid.float().sum() > 0:
+            ray_bundle.nears[hit_grid] = tt_starts[hit_grid][:, 0]
+            ray_bundle.fars[hit_grid] = tt_ends[hit_grid].max(dim=1)[0]
+
+        # sample uniformly with currently nears and far
+        voxel_samples = self.uniform_sampler(ray_bundle, num_samples=self.num_samples_boundary)
+
+        if self._binary_fine is not None:
+            # near from finer occupancy grids
+            packed_info, _, t_starts, t_ends = nerfacc.cuda.ray_marching(
+                ray_bundle.origins.contiguous(),
+                ray_bundle.directions.contiguous(),
+                ray_bundle.nears[:, 0].contiguous(),
+                ray_bundle.fars[:, 0].contiguous(),
+                self.grid.roi_aabb.contiguous(),
+                self._binary_fine,
+                self.grid.contraction_type.to_cpp_version(),
+                1e-3,  # small value for fine voxels
+                0.0,
+            )
+
+            tt_starts = nerfacc.unpack_data(packed_info, t_starts)
+
+            # update with near and far
+            hit_grid = (tt_starts > 0).any(dim=1)[:, 0]
+            if hit_grid.float().sum() > 0:
+                ray_bundle.nears[hit_grid] = tt_starts[hit_grid][:, 0] - 0.03
+                ray_bundle.fars[hit_grid] = tt_starts[hit_grid][:, 0] + 0.03
+            else:
+                print("waring not intersection")
+            print("sampling around surfaces")
+
+        # surface guided sampling
+        surface_samples = self.neus_sampler(ray_bundle, sdf_fn=sdf_fn)
+
+        # merge samples
+        ray_samples = self.unisurf_sampler.merge_ray_samples_in_eculidean(ray_bundle, surface_samples, voxel_samples)
+
+        return ray_samples

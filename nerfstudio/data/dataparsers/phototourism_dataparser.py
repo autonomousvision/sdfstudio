@@ -326,15 +326,17 @@ class Phototourism(DataParser):
         save_points("quantified_points.ply", points_valid.numpy())
         # breakpoint()
 
+        mask = mask.reshape(grid_size, grid_size, grid_size).contiguous()
+
         # in x,y,z order
         # assumes that the scene is centered at the origin
         aabb_scale = self.config.scene_scale
         scene_box = SceneBox(
             aabb=torch.tensor(
                 [[-aabb_scale, -aabb_scale, -aabb_scale], [aabb_scale, aabb_scale, aabb_scale]], dtype=torch.float32
-            )
+            ),
+            coarse_binary_gird=mask,
         )
-        scene_box = mask
 
         cameras = Cameras(
             camera_to_worlds=poses[:, :3, :4],
