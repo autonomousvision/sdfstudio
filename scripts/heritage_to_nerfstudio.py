@@ -108,6 +108,9 @@ def colmap_to_json(
     with open(config_path, "r") as yamlfile:
         scene_config = yaml.load(yamlfile, Loader=yaml.FullLoader)
 
+    radius = scene_config["radius"]
+    origin = np.array(scene_config["origin"]).reshape(1, 3)
+
     cams = colmap_utils.read_cameras_binary(cameras_path)
     imgs = colmap_utils.read_images_binary(images_path)
     pts3d = colmap_utils.read_points3d_binary(points_path)
@@ -122,6 +125,54 @@ def colmap_to_json(
         pts3d_array[pts_id, :3] = torch.from_numpy(pts.xyz)
         error_array[pts_id, 0] = torch.from_numpy(pts.error)
 
+    points_ori = []
+    min_track_length = scene_config["min_track_length"]
+    for id, p in pts3d.items():
+        if p.point2D_idxs.shape[0] > min_track_length:
+            points_ori.append(p.xyz)
+    points_ori = np.array(points_ori)
+    save_points("nori_3.ply", points_ori)
+
+    points_ori -= origin
+    print(points_ori.shape)
+
+    # expand and quantify
+    points_ori = torch.from_numpy(points_ori)
+    offset = torch.linspace(-1, 1.0, 3)
+    offset_cube = torch.meshgrid(offset, offset, offset)
+    offset_cube = torch.stack(offset_cube, dim=-1).reshape(-1, 3)
+
+    voxel_size = scene_config["voxel_size"]
+    offset_cube *= voxel_size  # voxel size
+    expand_points = points_ori[:, None, :] + offset_cube[None]
+    expand_points = expand_points.reshape(-1, 3)
+    save_points("expand_points.ply", expand_points.numpy())
+
+    # filter
+    # filter out points out of [-1, 1]
+    mask = torch.prod((expand_points > -radius), axis=-1, dtype=torch.bool) & torch.prod(
+        (expand_points < radius), axis=-1, dtype=torch.bool
+    )
+    filtered_points = expand_points[mask]
+    save_points("filtered_points.ply", filtered_points.numpy())
+
+    grid_size = 32
+    voxel_size = 2 * radius / grid_size
+    quantified_points = torch.floor(((filtered_points / radius) + 1.0) * grid_size // 2)
+
+    index = quantified_points[:, 0] + quantified_points[:, 1] * grid_size + quantified_points[:, 2] * grid_size**2
+
+    offset = torch.linspace(-radius + voxel_size / 2.0, radius - voxel_size / 2.0, grid_size)
+    z, y, x = torch.meshgrid(offset, offset, offset, indexing="xy")
+    offset_cube = torch.stack([x, z, y], dim=-1).reshape(-1, 3)
+
+    mask = torch.zeros(grid_size**3, dtype=torch.bool)
+    mask[index.long()] = True
+
+    points_valid = offset_cube[mask]
+    save_points("quantified_points.ply", points_valid.numpy())
+    # breakpoint()
+
     """
     xyz_world = np.array([pts3d[p_id].xyz for p_id in pts3d])
     xyz_world_error = np.array([pts3d[p_id].error for p_id in pts3d])
@@ -131,9 +182,17 @@ def colmap_to_json(
     save_points("pp.ply", xyz_world)
     """
 
-    radius = scene_config["radius"]
     mesh = trimesh.creation.icosphere(5, radius=radius)
     mesh.vertices = mesh.vertices + np.array(scene_config["origin"]).reshape(1, 3)
+
+    meshes = []
+    for p in points_valid:
+        box = trimesh.creation.box(extents=(voxel_size, voxel_size, voxel_size))
+        box.vertices = box.vertices + origin + p.numpy().reshape(-1, 3)
+        meshes.append(box)
+
+    mesh = trimesh.util.concatenate(meshes)
+    mesh.export("box.ply")
 
     """
     vertices = mesh.vertices @ sfm2gt[:3, :3].T + sfm2gt[:3, 3:].T
@@ -203,12 +262,16 @@ def colmap_to_json(
         # ['person', 'car', 'bicycle', 'minibike'] with id [12, 20,127,116]
         # ['sky'] = 2
         # new mask [80, 83, 43, 41, 115, 110]
-        semantic_ids_to_skip = [12, 20, 127, 116] + [80, 83, 43, 41, 115, 110]  # + [2]
+        semantic_ids_to_skip = [12, 20, 127, 116]  # + [80, 83, 43, 41, 115, 110]  # + [2]
         mask = np.stack([mask != semantic_id for semantic_id in semantic_ids_to_skip])  # + mask2
 
         mask = mask.all(axis=0)
 
         rgb_img = cv2.imread(str(image_filenames[-1]))
+        print(rgb_img.shape, mask.shape, H, W)
+        if rgb_img.shape[0] != H and rgb_img.shape[1] != W:
+            print("warning")
+            continue
         rgb_img_masked_semantic = rgb_img * mask[..., None]
 
         depth_mask = depth_pred > 0.0001
@@ -223,12 +286,14 @@ def colmap_to_json(
         # cv2.waitKey(0)
 
         # write mask
-        # (scene_path / "masks").mkdir(exist_ok=True, parents=False)
-        # np.save(scene_path / "masks" / img.name.replace(".jpg", ".npy"), mask)
+        (scene_path / "masks").mkdir(exist_ok=True, parents=False)
+        np.save(scene_path / "masks" / img.name.replace(".jpg", ".npy"), mask)
 
 
 scene_path = Path("data/Heritage-Recon/brandenburg_gate/")
-# scene_path = Path("data/Heritage-Recon/lincoln_memorial/")
+scene_path = Path("data/Heritage-Recon/lincoln_memorial/")
+scene_path = Path("data/Heritage-Recon/pantheon_exterior/")
+# scene_path = Path("data/Heritage-Recon/palacio_de_bellas_artes/")
 
 # sfm = "neuralsfm"
 sfm = "dense/sparse"
