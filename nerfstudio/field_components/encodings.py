@@ -600,6 +600,9 @@ class PeriodicVolumeEncoding(Encoding):
         self.hash_table *= hash_init_scale
         self.hash_table = nn.Parameter(self.hash_table)
 
+        # TODO weight loss by level?
+        self.per_level_weights = 1.0
+
     def get_out_dim(self) -> int:
         return self.num_levels * self.features_per_level
 
@@ -690,7 +693,5 @@ class PeriodicVolumeEncoding(Encoding):
         resx = diffx.abs().mean(dim=(1, 2, 3, 4))
         resy = diffy.abs().mean(dim=(1, 2, 3, 4))
         resz = diffz.abs().mean(dim=(1, 2, 3, 4))
-
-        # TODO weight loss by level?
 
         return ((resx + resy + resz) * self.per_level_weights).mean()

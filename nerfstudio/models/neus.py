@@ -64,6 +64,8 @@ class NeuSModelConfig(SurfaceModelConfig):
     """use to use perturb for the sampled points"""
     background_model: Literal["grid", "mlp", "none"] = "mlp"
     """background models"""
+    periodic_tvl_mult: float = 0.0
+    """Total variational loss mutliplier"""
 
 
 class NeuSModel(SurfaceModel):
@@ -253,3 +255,9 @@ class NeuSModel(SurfaceModel):
             metrics_dict["inv_s"] = 1.0 / self.field.deviation_network.get_variance().item()
 
         return metrics_dict
+
+    def get_loss_dict(self, outputs, batch, metrics_dict=None):
+        loss_dict = super().get_loss_dict(outputs, batch, metrics_dict)
+        if self.config.periodic_tvl_mult > 0.0:
+            loss_dict["tvl_loss"] = self.field.encoding.get_total_variation_loss() * self.config.periodic_tvl_mult
+        return loss_dict
