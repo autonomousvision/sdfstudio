@@ -25,6 +25,7 @@ import torch.nn.functional as F
 from torch import nn
 from torch.nn.parameter import Parameter
 from torchtyping import TensorType
+from typing_extensions import Literal
 
 from nerfstudio.cameras.rays import RaySamples
 from nerfstudio.field_components.embedding import Embedding
@@ -149,6 +150,7 @@ class SDFFieldConfig(FieldConfig):
     """Normalization factor for multi-resolution grids"""
     beta_init: float = 0.1
     """Init learnable beta value for transformation of sdf to density"""
+    encoding_type: Literal["hash", "periodic", "tensorf_vm"] = "hash"
 
 
 class SDFField(Field):
@@ -191,8 +193,7 @@ class SDFField(Field):
         smoothstep = True
         growth_factor = np.exp((np.log(max_res) - np.log(base_res)) / (num_levels - 1))
 
-        self.encoding_type = "hash"  # "hash"
-        if self.encoding_type == "hash":
+        if self.config.encoding_type == "hash":
             # feature encoding
             self.encoding = tcnn.Encoding(
                 n_input_dims=3,
@@ -206,16 +207,16 @@ class SDFField(Field):
                     "interpolation": "Smoothstep" if smoothstep else "Linear",
                 },
             )
-        elif self.encoding_type == "periodic":
+        elif self.config.encoding_type == "periodic":
             print("using periodic encoding")
             self.encoding = PeriodicVolumeEncoding(
                 num_levels=num_levels,
                 min_res=base_res,
                 max_res=max_res,
-                log2_hashmap_size=12,  # 64 ** 3 = 2^18
+                log2_hashmap_size=18,  # 64 ** 3 = 2^18
                 features_per_level=features_per_level,
             )
-        elif self.encoding_type == "tensorf_vm":
+        elif self.config.encoding_type == "tensorf_vm":
             print("using tensor vm")
             self.encoding = TensorVMEncoding(128, 24)
 

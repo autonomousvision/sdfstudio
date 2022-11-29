@@ -29,6 +29,7 @@ from nerfstudio.engine.callbacks import (
     TrainingCallbackLocation,
 )
 from nerfstudio.model_components.ray_samplers import NeuralReconWSampler
+from nerfstudio.model_components.scene_colliders import SphereCollider
 from nerfstudio.models.neus import NeuSModel, NeuSModelConfig
 
 
@@ -58,6 +59,7 @@ class NeuralReconWModel(NeuSModel):
         self.sampler = NeuralReconWSampler(
             aabb=self.scene_box.aabb, coarse_binary_grid=self.scene_box.coarse_binary_gird
         )
+        self.sphere_collider = SphereCollider(radius=1.0, soft_intersection=False)
 
     def get_training_callbacks(
         self, training_callback_attributes: TrainingCallbackAttributes

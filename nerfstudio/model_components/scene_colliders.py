@@ -127,12 +127,14 @@ class SphereCollider(SceneBoxCollider):
     """Sets the nears and fars with intersection with sphere.
 
     Args:
-        near_plane: distance to near plane
-        far_plane: distance to far plane
+        radius: radius of sphere
+        soft_intersection: default False, we clamp the value if not intersection found
+        if set to True, the distance between near and far is always  2*radius,
     """
 
-    def __init__(self, radius: float = 1.0, **kwargs) -> None:
+    def __init__(self, radius: float = 1.0, soft_intersection=False, **kwargs) -> None:
         self.radius = radius
+        self.soft_intersection = soft_intersection
         super().__init__(**kwargs)
 
     def forward(self, ray_bundle: RayBundle) -> RayBundle:
@@ -141,10 +143,9 @@ class SphereCollider(SceneBoxCollider):
 
         # sanity check
         under_sqrt = under_sqrt.clamp_min(0.01)
-        if (under_sqrt <= 0).sum() > 0:
-            print("BOUNDING SPHERE PROBLEM!")
-            breakpoint()
-            exit()
+
+        if self.soft_intersection:
+            under_sqrt = torch.ones_like(under_sqrt) * self.radius
 
         sphere_intersections = (
             torch.sqrt(under_sqrt) * torch.Tensor([-1, 1]).float().to(under_sqrt.device) - ray_cam_dot
