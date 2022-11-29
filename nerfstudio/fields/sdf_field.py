@@ -215,10 +215,11 @@ class SDFField(Field):
                 max_res=max_res,
                 log2_hashmap_size=18,  # 64 ** 3 = 2^18
                 features_per_level=features_per_level,
+                smoothstep=smoothstep,
             )
         elif self.config.encoding_type == "tensorf_vm":
             print("using tensor vm")
-            self.encoding = TensorVMEncoding(128, 24)
+            self.encoding = TensorVMEncoding(128, 24, smoothstep=smoothstep)
 
         # TODO make this configurable
         # we concat inputs position ourselves

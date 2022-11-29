@@ -418,11 +418,13 @@ class TensorVMEncoding(Encoding):
         resolution: int = 128,
         num_components: int = 24,
         init_scale: float = 0.1,
+        smoothstep: bool = False,
     ) -> None:
         super().__init__(in_dim=3)
 
         self.resolution = resolution
         self.num_components = num_components
+        self.smoothstep = smoothstep
 
         self.plane_coef = nn.Parameter(init_scale * torch.randn((3 * resolution * resolution, num_components)))
         self.line_coef = nn.Parameter(init_scale * torch.randn((3 * resolution, num_components)))
@@ -445,7 +447,7 @@ class TensorVMEncoding(Encoding):
 
         return index.long()
 
-    def grid_sample_2d(self, feature, coord, align_corners=True, type="plane"):
+    def grid_sample_2d(self, feature, coord, type="plane"):
         if type == "plane":
             height, width = self.resolution, self.resolution
         else:
@@ -456,8 +458,11 @@ class TensorVMEncoding(Encoding):
         scaled_f = torch.floor(scaled).type(torch.int32)
 
         offset = scaled - scaled_f
+
         # smooth version of offset
-        offset = offset * offset * (3.0 - 2.0 * offset)
+        if self.smoothstep:
+            offset = offset * offset * (3.0 - 2.0 * offset)
+
         offset = offset[..., None, :]
 
         index_0 = self.index_fn(scaled_c[..., 0:1], scaled_c[..., 1:2], height, width)  # [..., num_levels]
@@ -499,12 +504,8 @@ class TensorVMEncoding(Encoding):
 
         # diff grid_sample
 
-        plane_features = self.grid_sample_2d(
-            self.plane_coef, plane_coord, align_corners=True, type="plane"
-        )  # [3, -1, 1, Components]
-        # line_features = self.grid_sample_2d(
-        #    self.line_coef, line_coord, align_corners=True, type="line"
-        # )  # [3, -1, 1, Components]
+        plane_features = self.grid_sample_2d(self.plane_coef, plane_coord, type="plane")  # [3, -1, 1, Components]
+        # line_features = self.grid_sample_2d(self.line_coef, line_coord, type="line")  # [3, -1, 1, Components]
 
         # features = plane_features * line_features  # [3, -1, 1, components]
         features = plane_features
@@ -575,6 +576,7 @@ class PeriodicVolumeEncoding(Encoding):
         log2_hashmap_size: int = 19,
         features_per_level: int = 2,
         hash_init_scale: float = 0.001,
+        smoothstep: bool = False,
     ) -> None:
 
         super().__init__(in_dim=3)
@@ -584,12 +586,13 @@ class PeriodicVolumeEncoding(Encoding):
         assert log2_hashmap_size % 3 == 0
         self.hash_table_size = 2**log2_hashmap_size
         self.n_output_dims = num_levels * features_per_level
+        self.smoothstep = smoothstep
 
         levels = torch.arange(num_levels)
         growth_factor = np.exp((np.log(max_res) - np.log(min_res)) / (num_levels - 1))
         self.scalings = torch.floor(min_res * growth_factor**levels)
 
-        self.periodic_volume_resolution = 16
+        self.periodic_volume_resolution = 2 ** (log2_hashmap_size // 3)
         # self.periodic_resolution = torch.minimum(torch.floor(self.scalings), periodic_volume_resolution)
 
         self.hash_offset = levels * self.hash_table_size
@@ -606,19 +609,6 @@ class PeriodicVolumeEncoding(Encoding):
         Args:
             in_tensor: Tensor to be hashed
         """
-
-        # min_val = torch.min(in_tensor)
-        # max_val = torch.max(in_tensor)
-        # assert min_val >= 0.0
-        # assert max_val <= 1.0
-
-        # in_tensor = in_tensor * torch.tensor([1, 2654435761, 805459861]).to(in_tensor.device)
-        # x = torch.bitwise_xor(in_tensor[..., 0], in_tensor[..., 1])
-        # x = torch.bitwise_xor(x, in_tensor[..., 2])
-        # x %= self.hash_table_size
-        # x += self.hash_offset.to(x.device)
-
-        # breakpoint()
 
         # round to make it perioidic
         x = in_tensor
@@ -645,8 +635,8 @@ class PeriodicVolumeEncoding(Encoding):
 
         offset = scaled - scaled_f
 
-        # smooth version of offset
-        # offset = offset * offset * (3.0 - 2.0 * offset)
+        if self.smoothstep:
+            offset = offset * offset * (3.0 - 2.0 * offset)
 
         hashed_0 = self.hash_fn(scaled_c)  # [..., num_levels]
         hashed_1 = self.hash_fn(torch.cat([scaled_c[..., 0:1], scaled_f[..., 1:2], scaled_c[..., 2:3]], dim=-1))
@@ -682,3 +672,25 @@ class PeriodicVolumeEncoding(Encoding):
 
     def forward(self, in_tensor: TensorType["bs":..., "input_dim"]) -> TensorType["bs":..., "output_dim"]:
         return self.pytorch_fwd(in_tensor)
+
+    def get_total_variation_loss(self):
+        """Compute the total variation loss for the feature volume."""
+        feature_volume = self.hash_table.reshape(
+            self.num_levels,
+            self.periodic_volume_resolution,
+            self.periodic_volume_resolution,
+            self.periodic_volume_resolution,
+            self.features_per_level,
+        )
+        diffx = feature_volume[:, 1:, :, :, :] - feature_volume[:, :-1, :, :, :]
+        diffy = feature_volume[:, :, 1:, :, :] - feature_volume[:, :, :-1, :, :]
+        diffz = feature_volume[:, :, :, 1:, :] - feature_volume[:, :, :, :-1, :]
+
+        # TODO how to sum here or should we use mask?
+        resx = diffx.abs().mean(dim=(1, 2, 3, 4))
+        resy = diffy.abs().mean(dim=(1, 2, 3, 4))
+        resz = diffz.abs().mean(dim=(1, 2, 3, 4))
+
+        # TODO weight loss by level?
+
+        return ((resx + resy + resz) * self.per_level_weights).mean()
