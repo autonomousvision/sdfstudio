@@ -250,7 +250,7 @@ class UniScene(DataParser):
                 rot[2, :] *= -1
 
                 normal_map = normal.reshape(3, -1)
-                normal_map = torch.nn.functional.normalize(normal_map, p=2camera_to_worlds[:, :3, 3].norm(dim=-1), dim=0)
+                normal_map = torch.nn.functional.normalize(normal_map, p=2, dim=0)
                 # because y and z is flipped
                 normal_map[1:3, :] *= -1
 
