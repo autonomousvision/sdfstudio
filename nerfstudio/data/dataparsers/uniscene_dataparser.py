@@ -214,7 +214,7 @@ class UniScene(DataParser):
             # unpack data
             image_filename = image_paths[idx]
             # TODO now we has the first intrincis
-            intrinsics = intrinsics_all[0]
+            intrinsics = intrinsics_all[idx]
             camtoworld = pose_all[idx]
             # append data
             image_filenames.append(image_filename)
@@ -272,15 +272,15 @@ class UniScene(DataParser):
 
         scene_box = SceneBox(aabb=torch.tensor([[-1.0, -1.0, -1.0], [1.0, 1.0, 1.0]], dtype=torch.float32))
 
-        assert torch.all(cx[0] == cx), "Not all cameras have the same cx. Our Cameras class does not support this."
-        assert torch.all(cy[0] == cy), "Not all cameras have the same cy. Our Cameras class does not support this."
+        # assert torch.all(cx[0] == cx), "Not all cameras have the same cx. Our Cameras class does not support this."
+        # assert torch.all(cy[0] == cy), "Not all cameras have the same cy. Our Cameras class does not support this."
 
         height, width = get_image(image_filenames[0]).shape[:2]
         cameras = Cameras(
             fx=fx,
             fy=fy,
-            cx=float(cx[0]),
-            cy=float(cy[0]),
+            cx=cx,  # float(cx[0]),
+            cy=cy,  # float(cy[0]),
             height=height,
             width=width,
             camera_to_worlds=camera_to_worlds[:, :3, :4],
