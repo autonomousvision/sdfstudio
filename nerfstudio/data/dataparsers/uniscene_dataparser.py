@@ -122,7 +122,7 @@ class UniSceneDataParserConfig(DataParserConfig):
     """target class to instantiate"""
     data: Path = Path("data/DTU/scan65")
     """Directory specifying location of data."""
-    include_normal: bool = False
+    include_mono_prior: bool = False
     """whether or not to include loading of normal """
     downscale_factor: int = 1
     scene_scale: float = 2.0
@@ -229,37 +229,41 @@ class UniScene(DataParser):
         cy = torch.stack(cy)
         camera_to_worlds = torch.stack(camera_to_worlds)
 
-        # load monocular depths and normals
-        depth_images, normal_images = [], []
-        for idx, (dpath, npath) in enumerate(zip(depth_paths, normal_paths)):
-            depth = np.load(dpath)
-            depth_images.append(torch.from_numpy(depth).float())
+        if self.config.include_mono_prior:
+            # load monocular depths and normals
+            depth_images, normal_images = [], []
+            for idx, (dpath, npath) in enumerate(zip(depth_paths, normal_paths)):
+                depth = np.load(dpath)
+                depth_images.append(torch.from_numpy(depth).float())
 
-            normal = np.load(npath)
+                normal = np.load(npath)
 
-            # important as the output of omnidata is normalized
-            normal = normal * 2.0 - 1.0
-            normal = torch.from_numpy(normal).float()
+                # important as the output of omnidata is normalized
+                normal = normal * 2.0 - 1.0
+                normal = torch.from_numpy(normal).float()
 
-            # transform normal to world coordinate system
-            rot = camera_to_worlds[idx][:3, :3].clone()
-            # composite rotation matrix to nerfstudio
-            rot[:, 1:3] *= -1
-            rot = rot[np.array([1, 0, 2]), :]
-            rot[2, :] *= -1
+                # transform normal to world coordinate system
+                rot = camera_to_worlds[idx][:3, :3].clone()
+                # composite rotation matrix to nerfstudio
+                rot[:, 1:3] *= -1
+                rot = rot[np.array([1, 0, 2]), :]
+                rot[2, :] *= -1
 
-            normal_map = normal.reshape(3, -1)
-            normal_map = torch.nn.functional.normalize(normal_map, p=2, dim=0)
-            # because y and z is flipped
-            normal_map[1:3, :] *= -1
+                normal_map = normal.reshape(3, -1)
+                normal_map = torch.nn.functional.normalize(normal_map, p=2camera_to_worlds[:, :3, 3].norm(dim=-1), dim=0)
+                # because y and z is flipped
+                normal_map[1:3, :] *= -1
 
-            normal_map = rot @ normal_map
-            normal_map = normal_map.permute(1, 0).reshape(*normal.shape[1:], 3)
-            normal_images.append(normal_map)
+                normal_map = rot @ normal_map
+                normal_map = normal_map.permute(1, 0).reshape(*normal.shape[1:], 3)
+                normal_images.append(normal_map)
 
-        # stack
-        depth_images = torch.stack(depth_images)
-        normal_images = torch.stack(normal_images)
+            # stack
+            depth_images = torch.stack(depth_images)
+            normal_images = torch.stack(normal_images)
+        else:
+            depth_images = None
+            normal_images = None
 
         # Convert from COLMAP's/OPENCV's camera coordinate system to nerfstudio
         camera_to_worlds[:, 0:3, 1:3] *= -1
@@ -271,7 +275,7 @@ class UniScene(DataParser):
         assert torch.all(cx[0] == cx), "Not all cameras have the same cx. Our Cameras class does not support this."
         assert torch.all(cy[0] == cy), "Not all cameras have the same cy. Our Cameras class does not support this."
 
-        height, width = depth_images.shape[1:3]
+        height, width = get_image(image_filenames[0]).shape[:2]
         cameras = Cameras(
             fx=fx,
             fy=fy,
@@ -285,10 +289,12 @@ class UniScene(DataParser):
 
         # TODO fix later
         # cameras.rescale_output_resolution(scaling_factor=1.0 / self.config.downscale_factor)
-
-        additional_inputs_dict = {
-            "cues": {"func": get_depths_and_normals, "kwargs": {"depths": depth_images, "normals": normal_images}}
-        }
+        if self.config.include_mono_prior:
+            additional_inputs_dict = {
+                "cues": {"func": get_depths_and_normals, "kwargs": {"depths": depth_images, "normals": normal_images}}
+            }
+        else:
+            additional_inputs_dict = {}
 
         pairs_path = self.config.data / "pairs.txt"
         if pairs_path.exists() and split == "train":
