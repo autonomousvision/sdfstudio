@@ -35,6 +35,13 @@ from nerfstudio.data.dataparsers.base_dataparser import (
 )
 from nerfstudio.data.scene_box import SceneBox
 
+# random rotate
+from scipy.spatial.transform import Rotation
+
+random_rotation = torch.eye(4)
+random_rotation[:3, :3] = torch.from_numpy(Rotation.random().as_matrix())
+
+
 CONSOLE = Console()
 
 
@@ -269,6 +276,8 @@ class UniScene(DataParser):
         camera_to_worlds[:, 0:3, 1:3] *= -1
         camera_to_worlds = camera_to_worlds[:, np.array([1, 0, 2, 3]), :]
         camera_to_worlds[:, 2, :] *= -1
+
+        camera_to_worlds = random_rotation[None] @ camera_to_worlds
 
         scene_box = SceneBox(aabb=torch.tensor([[-1.0, -1.0, -1.0], [1.0, 1.0, 1.0]], dtype=torch.float32))
 
