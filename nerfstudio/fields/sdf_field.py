@@ -372,8 +372,23 @@ class SDFField(Field):
         density = self.laplace_density(sdf)
         return density, geo_feature
 
-    def get_alpha(self, ray_samples: RaySamples, sdf, gradients):
+    def get_alpha(self, ray_samples: RaySamples, sdf=None, gradients=None):
         """compute alpha from sdf as in NeuS"""
+        if sdf is None or gradients is None:
+            inputs = ray_samples.frustums.get_start_positions()
+            inputs.requires_grad_(True)
+            with torch.enable_grad():
+                h = self.forward_geonetwork(inputs)
+                sdf, _ = torch.split(h, [1, self.config.geo_feat_dim], dim=-1)
+            d_output = torch.ones_like(sdf, requires_grad=False, device=sdf.device)
+            gradients = torch.autograd.grad(
+                outputs=sdf,
+                inputs=inputs,
+                grad_outputs=d_output,
+                create_graph=True,
+                retain_graph=True,
+                only_inputs=True,
+            )[0]
 
         inv_s = self.deviation_network.get_variance()  # Single parameter
 
