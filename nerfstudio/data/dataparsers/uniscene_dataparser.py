@@ -178,6 +178,16 @@ class UniScene(DataParser):
             P = P[:3, :4]
             intrinsics, pose = load_K_Rt_from_P(None, P)
 
+            # chair
+            # scale = 384 / 1080
+            # offset = (1440 - 1080) * 0.5
+            # thin
+            # scale = 384 / 1020
+            # offset = (1360 - 1020) * 0.5
+
+            # intrinsics[0, 2] -= offset
+            # intrinsics[:2, :] *= scale
+
             center_crop_type = self.config.center_crop_type
             # because we do resize and center crop 384x384 when using omnidata model, we need to adjust the camera intrinsic accordingly
             if center_crop_type == "center_crop_for_replica":
