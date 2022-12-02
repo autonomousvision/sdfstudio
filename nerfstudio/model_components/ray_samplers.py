@@ -1353,9 +1353,11 @@ class NeuSAccSampler(Sampler):
         self.step_size = 0.01 / 5.0
         self.alpha_thres = 0.001
 
-        # TODO remvoe 2.0 and create cube in the initialization
+        # only supports cubic bbox for now
+        assert aabb[0, 0] == aabb[0, 1] and aabb[0, 0] == aabb[0, 2]
+        assert aabb[1, 0] == aabb[1, 1] and aabb[1, 0] == aabb[1, 2]
         self.grid_size = self.resolution
-        self.voxel_size = 2.0 / self.grid_size
+        self.voxel_size = (aabb[1, 0] - aabb[0, 0]) / self.grid_size
 
         # nesu_sampler at the begining of training
         self.neus_sampler = neus_sampler
@@ -1368,8 +1370,17 @@ class NeuSAccSampler(Sampler):
 
     def init_grid_coordinate(self):
         # coarse grid coordinates
-        offset = torch.linspace(-1.0 + self.voxel_size / 2.0, 1.0 - self.voxel_size / 2.0, self.grid_size)
-        x, y, z = torch.meshgrid(offset, offset, offset, indexing="ij")
+        aabb = self.aabb
+        offset_x = torch.linspace(
+            aabb[0, 0] + self.voxel_size / 2.0, aabb[1, 0] - self.voxel_size / 2.0, self.grid_size
+        )
+        offset_y = torch.linspace(
+            aabb[0, 1] + self.voxel_size / 2.0, aabb[1, 1] - self.voxel_size / 2.0, self.grid_size
+        )
+        offset_z = torch.linspace(
+            aabb[0, 2] + self.voxel_size / 2.0, aabb[1, 2] - self.voxel_size / 2.0, self.grid_size
+        )
+        x, y, z = torch.meshgrid(offset_x, offset_y, offset_z, indexing="ij")
         cube_coordinate = torch.stack([x, y, z], dim=-1).reshape(-1, 3)
 
         self.register_buffer("cube_coordinate", cube_coordinate)
@@ -1485,18 +1496,18 @@ class NeuSAccSampler(Sampler):
         ray_indices = ray_indices.long()
         ray_samples = self.create_ray_samples_from_ray_indices(ray_bundle, ray_indices, t_starts, t_ends)
 
-        if self.importance_sampling:
-            # save_points("first.ply", ray_samples.frustums.get_start_positions().cpu().numpy().reshape(-1, 3))
+        if self.importance_sampling and ray_samples.shape[0] > 0:
+            save_points("first.ply", ray_samples.frustums.get_start_positions().cpu().numpy().reshape(-1, 3))
 
             alphas = alpha_fn(ray_samples)
             weights = nerfacc.render_weight_from_alpha(alphas, ray_indices=ray_indices, n_rays=ray_bundle.shape[0])
 
             # TODO make it configurable
             # re sample
-            packed_info, t_starts, t_ends = nerfacc.ray_resampling(packed_info, t_starts, t_ends, weights[:, 0], 32)
+            packed_info, t_starts, t_ends = nerfacc.ray_resampling(packed_info, t_starts, t_ends, weights[:, 0], 16)
             ray_indices = nerfacc.unpack_info(packed_info, t_starts.shape[0])
             ray_samples = self.create_ray_samples_from_ray_indices(ray_bundle, ray_indices, t_starts, t_ends)
 
-            # save_points("second.ply", ray_samples.frustums.get_start_positions().cpu().numpy().reshape(-1, 3))
+            save_points("second.ply", ray_samples.frustums.get_start_positions().cpu().numpy().reshape(-1, 3))
 
         return ray_samples, ray_indices
