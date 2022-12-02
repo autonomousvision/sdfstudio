@@ -1333,7 +1333,8 @@ class NeuSAccSampler(Sampler):
         num_samples: int = 8,
         num_samples_importance: int = 16,
         num_samples_boundary: int = 10,
-        steps_per_grid_update: int = 5000,
+        steps_warpup: int = 2000,
+        steps_per_grid_update: int = 1000,
         importance_sampling: bool = False,
         local_rank: int = 0,
         single_jitter: bool = False,
@@ -1346,9 +1347,10 @@ class NeuSAccSampler(Sampler):
         self.num_samples_boundary = num_samples_boundary
         self.single_jitter = single_jitter
         self.importance_sampling = importance_sampling
+        self.steps_warpup = steps_warpup
         self.steps_per_grid_update = steps_per_grid_update
         self.local_rank = local_rank
-        self.step_size = 0.01
+        self.step_size = 0.01 / 5.0
         self.alpha_thres = 0.001
 
         # TODO remvoe 2.0 and create cube in the initialization
@@ -1372,6 +1374,10 @@ class NeuSAccSampler(Sampler):
 
         self.register_buffer("cube_coordinate", cube_coordinate)
 
+    def update_step_size(self, step, inv_s=None):
+        inv_s = inv_s().item()
+        self.step_size = 14.0 / inv_s / 16
+
     @torch.no_grad()
     def update_binary_grid(self, step, sdf_fn=None, inv_s=None):
         assert sdf_fn is not None
@@ -1379,7 +1385,7 @@ class NeuSAccSampler(Sampler):
         # bootstrap should needs longer if using only one gpus
         # if step % self.steps_per_grid_update == 1:
         # TODO boostrap step
-        if step >= self.steps_per_grid_update and step % self.steps_per_grid_update == 0:
+        if step >= self.steps_warpup and step % self.steps_per_grid_update == 0:
 
             mask = self._binary.reshape(-1)
             # voxels can't be recovered once it is pruned

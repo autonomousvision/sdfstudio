@@ -77,6 +77,15 @@ class NeuSAccModel(NeuSModel):
             )
         )
 
+        callbacks.append(
+            TrainingCallback(
+                where_to_run=[TrainingCallbackLocation.BEFORE_TRAIN_ITERATION],
+                update_every_num_iters=1,
+                func=self.sampler.update_step_size,
+                kwargs={"inv_s": inv_s},
+            )
+        )
+
         return callbacks
 
     def get_outputs(self, ray_bundle: RayBundle, return_samples=False):
@@ -127,3 +136,8 @@ class NeuSAccModel(NeuSModel):
                 outputs.update({"eik_grad": zeros})
 
         return outputs
+
+    def get_metrics_dict(self, outputs, batch):
+        metrics = super().get_metrics_dict(outputs, batch)
+        metrics["acc_step_size"] = self.sampler.step_size
+        return metrics

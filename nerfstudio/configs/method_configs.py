@@ -402,7 +402,7 @@ method_configs["neus_acc"] = Config(
     pipeline=VanillaPipelineConfig(
         datamanager=VanillaDataManagerConfig(
             dataparser=UniSceneDataParserConfig(),
-            train_num_rays_per_batch=1024,
+            train_num_rays_per_batch=2048,
             eval_num_rays_per_batch=1024,
             camera_optimizer=CameraOptimizerConfig(
                 mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
@@ -413,11 +413,11 @@ method_configs["neus_acc"] = Config(
     optimizers={
         "fields": {
             "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
-            "scheduler": NeuSSchedulerConfig(warm_up_end=5000, learning_rate_alpha=0.05, max_steps=300000),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=30000),
         },
         "field_background": {
             "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
-            "scheduler": NeuSSchedulerConfig(warm_up_end=5000, learning_rate_alpha=0.05, max_steps=300000),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=30000),
         },
     },
     viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
