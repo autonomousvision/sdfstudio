@@ -1375,6 +1375,7 @@ class NeuSAccSampler(Sampler):
         self.register_buffer("cube_coordinate", cube_coordinate)
 
     def update_step_size(self, step, inv_s=None):
+        assert inv_s is not None
         inv_s = inv_s().item()
         self.step_size = 14.0 / inv_s / 16
 
@@ -1382,9 +1383,7 @@ class NeuSAccSampler(Sampler):
     def update_binary_grid(self, step, sdf_fn=None, inv_s=None):
         assert sdf_fn is not None
         assert inv_s is not None
-        # bootstrap should needs longer if using only one gpus
-        # if step % self.steps_per_grid_update == 1:
-        # TODO boostrap step
+
         if step >= self.steps_warpup and step % self.steps_per_grid_update == 0:
 
             mask = self._binary.reshape(-1)
@@ -1481,9 +1480,6 @@ class NeuSAccSampler(Sampler):
             self.step_size,  # TODO stepsize based on inv_s value?
             0.0,
         )
-        # ends use as far
-        # tt_starts = nerfacc.unpack_data(packed_info, t_starts)
-        # tt_ends = nerfacc.unpack_data(packed_info, t_ends)
 
         # create ray_samples with the intersection
         ray_indices = ray_indices.long()

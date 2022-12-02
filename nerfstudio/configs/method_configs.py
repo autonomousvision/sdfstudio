@@ -396,7 +396,7 @@ method_configs["neus_acc"] = Config(
         steps_per_eval_batch=5000,
         steps_per_save=20000,
         steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
-        max_num_iterations=100000,
+        max_num_iterations=20000,
         mixed_precision=False,
     ),
     pipeline=VanillaPipelineConfig(
@@ -413,11 +413,11 @@ method_configs["neus_acc"] = Config(
     optimizers={
         "fields": {
             "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
-            "scheduler": NeuSSchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=30000),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=20000),
         },
         "field_background": {
             "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
-            "scheduler": NeuSSchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=30000),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=20000),
         },
     },
     viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
