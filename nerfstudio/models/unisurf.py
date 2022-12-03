@@ -19,10 +19,9 @@ Implementation of VolSDF.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Type
+from typing import Dict, List, Type
 
 import torch
-from torchtyping import TensorType
 
 from nerfstudio.engine.callbacks import (
     TrainingCallback,
@@ -46,8 +45,6 @@ class UniSurfModelConfig(SurfaceModelConfig):
     """smoothness loss on surface points in unisurf"""
     num_samples_interval: int = 64
     """Number of uniform samples"""
-    num_samples_outside: int = 32
-    """Number of samples outside the bounding sphere for backgound"""
     num_samples_importance: int = 32
     """Number of important samples"""
     num_marching_steps: int = 256
@@ -69,22 +66,15 @@ class UniSurfModel(SurfaceModel):
         """Set the fields and modules."""
         super().populate_modules()
 
+        # can't use eikonal loss in Unisurf? or we could use learnable paramter to transform sdf to occupancy
+        assert self.config.eikonal_loss_mult == 0.0
+
         self.sampler = UniSurfSampler(
             num_samples_interval=self.config.num_samples_interval,
             num_samples_outside=self.config.num_samples_outside,
             num_samples_importance=self.config.num_samples_importance,
             num_marching_steps=self.config.num_marching_steps,
         )
-
-        """
-        self.sampler = NeuSSampler(
-            num_samples=self.config.num_samples,
-            num_samples_importance=self.config.num_samples_importance,
-            num_samples_outside=self.config.num_samples_outside,
-            num_upsample_steps=self.config.num_up_sample_steps,
-            base_variance=self.config.base_variance,
-        )
-        """
 
     def get_training_callbacks(
         self, training_callback_attributes: TrainingCallbackAttributes
@@ -99,105 +89,45 @@ class UniSurfModel(SurfaceModel):
         )
         return callbacks
 
-    def get_outputs(self, ray_bundle: RayBundle):
+    def sample_and_forward_field(self, ray_bundle: RayBundle) -> Dict:
         ray_samples, surface_points = self.sampler(
             ray_bundle, occupancy_fn=self.field.get_occupancy, sdf_fn=self.field.get_sdf, return_surface_points=True
         )
         field_outputs = self.field(ray_samples, return_occupancy=True)
-        weights = ray_samples.get_weights_from_alphas(field_outputs[FieldHeadNames.OCCUPANCY])
-
-        rgb = self.renderer_rgb(rgb=field_outputs[FieldHeadNames.RGB], weights=weights)
-        depth = self.renderer_depth(weights=weights, ray_samples=ray_samples)
-        # the rendered depth is point-to-point distance and we should convert to depth
-        depth = depth / ray_bundle.directions_norm
-
-        normal = self.renderer_normal(semantics=field_outputs[FieldHeadNames.NORMAL], weights=weights)
-        accumulation = self.renderer_accumulation(weights=weights)
-
-        outputs = {"rgb": rgb, "accumulation": accumulation, "depth": depth, "normal": normal}
-
-        if self.training:
-            grad_points = field_outputs[FieldHeadNames.GRADIENT]
-
-            surface_points_neig = surface_points + (torch.rand_like(surface_points) - 0.5) * 0.01
-            pp = torch.cat([surface_points, surface_points_neig], dim=0)
-            surface_grad = self.field.gradient(pp)
-            surface_points_normal = torch.nn.functional.normalize(surface_grad, p=2, dim=-1)
-
-            outputs.update({"eik_grad": grad_points, "surface_points_normal": surface_points_normal})
-
-        return outputs
-
-    def get_outputs_flexible(self, ray_bundle: RayBundle, additional_inputs: Dict[str, TensorType]):
-        """run the model with additional inputs such as warping or rendering from unseen rays
-        Args:
-            ray_bundle: containing all the information needed to render that ray latents included
-            additional_inputs: addtional inputs such as images, src_idx, src_cameras
-
-        Returns:
-            dict: information needed for compute gradients
-        """
-        if self.collider is not None:
-            ray_bundle = self.collider(ray_bundle)
-        ray_samples, surface_points = self.sampler(
-            ray_bundle, occupancy_fn=self.field.get_occupancy, sdf_fn=self.field.get_sdf, return_surface_points=True
+        weights, transmittance = ray_samples.get_weights_and_transmittance_from_alphas(
+            field_outputs[FieldHeadNames.OCCUPANCY]
         )
-        field_outputs = self.field(ray_samples, return_occupancy=True)
-        weights = ray_samples.get_weights_from_alphas(field_outputs[FieldHeadNames.OCCUPANCY])
-        # TODO: warping and other stuff that uses additional inputs
+        bg_transmittance = transmittance[:, -1, :]
 
-        rgb = self.renderer_rgb(rgb=field_outputs[FieldHeadNames.RGB], weights=weights)
-        depth = self.renderer_depth(weights=weights, ray_samples=ray_samples)
-        # the rendered depth is point-to-point distance and we should convert to depth
-        depth = depth / ray_bundle.directions_norm
+        samples_and_field_outputs = {
+            "ray_samples": ray_samples,
+            "surface_points": surface_points,
+            "field_outputs": field_outputs,
+            "weights": weights,
+            "bg_transmittance": bg_transmittance,
+        }
+        return samples_and_field_outputs
 
-        normal = self.renderer_normal(semantics=field_outputs[FieldHeadNames.NORMAL], weights=weights)
-        accumulation = self.renderer_accumulation(weights=weights)
-
-        outputs = {"rgb": rgb, "accumulation": accumulation, "depth": depth, "normal": normal}
-
-        if self.config.patch_warp_loss_mult > 0:
-            # TODO visualize warped results
-            # patch warping
-            warped_patches, valid_mask = self.patch_warping(
-                ray_samples,
-                field_outputs[FieldHeadNames.SDF],
-                field_outputs[FieldHeadNames.NORMAL],
-                additional_inputs["src_cameras"],
-                additional_inputs["src_imgs"],
-                pix_indices=additional_inputs["uv"],
-            )
-
-            outputs.update({"patches": warped_patches, "patches_valid_mask": valid_mask})
-
-        if self.training:
-            grad_points = field_outputs[FieldHeadNames.GRADIENT]
-
-            surface_points_neig = surface_points + (torch.rand_like(surface_points) - 0.5) * 0.01
-            pp = torch.cat([surface_points, surface_points_neig], dim=0)
-            surface_grad = self.field.gradient(pp)
-            surface_points_normal = torch.nn.functional.normalize(surface_grad, p=2, dim=-1)
-
-            outputs.update({"eik_grad": grad_points, "surface_points_normal": surface_points_normal})
-
-        return outputs
-
-    def get_metrics_dict(self, outputs, batch):
-        metrics_dict = {}
-        image = batch["image"].to(self.device)
-        metrics_dict["psnr"] = self.psnr(outputs["rgb"], image)
+    def get_metrics_dict(self, outputs, batch) -> Dict:
+        metrics_dict = super().get_metrics_dict(outputs, batch)
         if self.training:
             # training statics
             metrics_dict["delta"] = self.sampler.delta
 
         return metrics_dict
 
-    def get_loss_dict(self, outputs, batch, metrics_dict=None):
+    def get_loss_dict(self, outputs, batch, metrics_dict=None) -> Dict:
         loss_dict = super().get_loss_dict(outputs, batch, metrics_dict)
 
-        # TODO move to base model?
+        # TODO move to base model as other model could also use it?
         if self.training and self.config.smooth_loss_multi > 0.0:
-            surface_points_normal = outputs["surface_points_normal"]
+            surface_points = outputs["surface_points"]
+
+            surface_points_neig = surface_points + (torch.rand_like(surface_points) - 0.5) * 0.01
+            pp = torch.cat([surface_points, surface_points_neig], dim=0)
+            surface_grad = self.field.gradient(pp)
+            surface_points_normal = torch.nn.functional.normalize(surface_grad, p=2, dim=-1)
+
             N = surface_points_normal.shape[0] // 2
 
             diff_norm = torch.norm(surface_points_normal[:N] - surface_points_normal[N:], dim=-1)

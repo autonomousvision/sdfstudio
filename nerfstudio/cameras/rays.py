@@ -151,7 +151,7 @@ class RaySamples(TensorDataclass):
 
         return weights
 
-    def get_weights_and_transmitance(
+    def get_weights_and_transmittance(
         self, densities: TensorType[..., "num_samples", 1]
     ) -> Tuple[TensorType[..., "num_samples", 1], TensorType[..., "num_samples", 1]]:
         """Return weights and transmittance based on predicted densities

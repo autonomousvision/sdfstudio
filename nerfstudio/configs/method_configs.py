@@ -71,52 +71,21 @@ descriptions = {
     "mipnerf": "High quality model for bounded scenes. (slow)",
     "semantic-nerfw": "Predicts semantic segmentations and filters out transient objects.",
     "vanilla-nerf": "Original NeRF model. (slow)",
-    "monosdf": "Implementation of MonoSDF.",
     "volsdf": "Implementation of VolSDF.",
+    "monosdf": "Implementation of MonoSDF.",
     "geo-volsdf": "Implementation of patch warping from GeoNeuS with VolSDF.",
-    "neuralwarp": "Implementation of Neural Warp for VolSDF.",
     "neus": "Implementation of NeuS.",
+    "mono-neus": "Implementation of MonoSDF with NeuS rendering formulation.",
     "geo-neus": "Implementation of patch warping from GeoNeuS with NeuS.",
     "unisurf": "Implementation of UniSurf.",
+    "mono-unisurf": "Implementation of MonoSDF with unisurf rendering formulation.",
+    "geo-unisurf": "Implementation of patch warping from GeoNeuS with UniSurf.",
     "tensorf": "tensorf",
     "dnerf": "Dynamic-NeRF model. (slow)",
     "dto": "Occupancy field with density guided sampling",
     "neusW": "Implementation of Neural Reconstruction in the wild",
     "neus-acc": "Implementation of NeuS with empty space skipping.",
 }
-
-method_configs["neuralwarp"] = Config(
-    method_name="neuralwarp",
-    trainer=TrainerConfig(
-        steps_per_eval_image=5000,
-        steps_per_eval_batch=5000,
-        steps_per_save=20000,
-        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
-        max_num_iterations=150001,  # 150K - 100K = 50K iterations as the volsdf model is pretrained for 100K
-        mixed_precision=False,
-    ),
-    pipeline=FlexibleInputPipelineConfig(
-        datamanager=FlexibleDataManagerConfig(
-            dataparser=UniSceneDataParserConfig(),
-            train_num_rays_per_batch=1024,
-            eval_num_rays_per_batch=1024,
-            camera_optimizer=CameraOptimizerConfig(
-                mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
-            ),
-        ),
-        model=VolSDFModelConfig(patch_warp_loss_mult=0.1, eval_num_rays_per_chunk=1024),
-    ),
-    optimizers={
-        "fields": {
-            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
-            "scheduler": MultiStepSchedulerConfig(
-                max_steps=1000000
-            ),  # set max_steps to a large value so it never step and we will use the last_lr form the pretrained model
-        },
-    },
-    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
-    vis="viewer",
-)
 
 method_configs["geo-volsdf"] = Config(
     method_name="geo-volsdf",
@@ -145,6 +114,10 @@ method_configs["geo-volsdf"] = Config(
             "scheduler": MultiStepSchedulerConfig(
                 max_steps=1000000
             ),  # set max_steps to a large value so it never step and we will use the last_lr form the pretrained model
+        },
+        "field_background": {
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "scheduler": ExponentialSchedulerConfig(decay_rate=0.1, max_steps=200000),
         },
     },
     viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
@@ -177,6 +150,10 @@ method_configs["monosdf"] = Config(
             "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
             "scheduler": ExponentialSchedulerConfig(decay_rate=0.1, max_steps=200000),
         },
+        "field_background": {
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "scheduler": ExponentialSchedulerConfig(decay_rate=0.1, max_steps=200000),
+        },
     },
     viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
     vis="viewer",
@@ -205,6 +182,10 @@ method_configs["volsdf"] = Config(
     ),
     optimizers={
         "fields": {
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "scheduler": ExponentialSchedulerConfig(decay_rate=0.1, max_steps=100000),
+        },
+        "field_background": {
             "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
             "scheduler": ExponentialSchedulerConfig(decay_rate=0.1, max_steps=100000),
         },
@@ -248,6 +229,40 @@ method_configs["geo-neus"] = Config(
     vis="viewer",
 )
 
+method_configs["mono-neus"] = Config(
+    method_name="mono-neus",
+    trainer=TrainerConfig(
+        steps_per_eval_image=500,
+        steps_per_eval_batch=5000,
+        steps_per_save=20000,
+        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
+        max_num_iterations=100000,
+        mixed_precision=False,
+    ),
+    pipeline=VanillaPipelineConfig(
+        datamanager=VanillaDataManagerConfig(
+            dataparser=UniSceneDataParserConfig(),
+            train_num_rays_per_batch=1024,
+            eval_num_rays_per_batch=1024,
+            camera_optimizer=CameraOptimizerConfig(
+                mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
+            ),
+        ),
+        model=NeuSModelConfig(mono_depth_loss_mult=0.1, mono_normal_loss_mult=0.05, eval_num_rays_per_chunk=1024),
+    ),
+    optimizers={
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=5000, learning_rate_alpha=0.05, max_steps=300000),
+        },
+        "field_background": {
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=5000, learning_rate_alpha=0.05, max_steps=300000),
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer",
+)
 
 method_configs["neus"] = Config(
     method_name="neus",
@@ -307,6 +322,80 @@ method_configs["unisurf"] = Config(
     ),
     optimizers={
         "fields": {
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=5000, learning_rate_alpha=0.05, max_steps=300000),
+        },
+        "field_background": {
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=5000, learning_rate_alpha=0.05, max_steps=300000),
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer",
+)
+
+method_configs["mono-unisurf"] = Config(
+    method_name="mono-unisurf",
+    trainer=TrainerConfig(
+        steps_per_eval_image=500,
+        steps_per_eval_batch=5000,
+        steps_per_save=20000,
+        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
+        max_num_iterations=100000,
+        mixed_precision=False,
+    ),
+    pipeline=VanillaPipelineConfig(
+        datamanager=VanillaDataManagerConfig(
+            dataparser=UniSceneDataParserConfig(),
+            train_num_rays_per_batch=1024,
+            eval_num_rays_per_batch=1024,
+            camera_optimizer=CameraOptimizerConfig(
+                mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
+            ),
+        ),
+        model=UniSurfModelConfig(mono_depth_loss_mult=0.1, mono_normal_loss_mult=0.05, eval_num_rays_per_chunk=1024),
+    ),
+    optimizers={
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=5000, learning_rate_alpha=0.05, max_steps=300000),
+        },
+        "field_background": {
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=5000, learning_rate_alpha=0.05, max_steps=300000),
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer",
+)
+
+method_configs["geo-unisurf"] = Config(
+    method_name="geo-unisurf",
+    trainer=TrainerConfig(
+        steps_per_eval_image=500,
+        steps_per_eval_batch=5000,
+        steps_per_save=20000,
+        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
+        max_num_iterations=100000,
+        mixed_precision=False,
+    ),
+    pipeline=FlexibleInputPipelineConfig(
+        datamanager=FlexibleDataManagerConfig(
+            dataparser=UniSceneDataParserConfig(),
+            train_num_rays_per_batch=1024,
+            eval_num_rays_per_batch=1024,
+            camera_optimizer=CameraOptimizerConfig(
+                mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
+            ),
+        ),
+        model=UniSurfModelConfig(patch_warp_loss_mult=0.1, eval_num_rays_per_chunk=1024),
+    ),
+    optimizers={
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=5000, learning_rate_alpha=0.05, max_steps=300000),
+        },
+        "field_background": {
             "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
             "scheduler": NeuSSchedulerConfig(warm_up_end=5000, learning_rate_alpha=0.05, max_steps=300000),
         },
@@ -389,8 +478,8 @@ method_configs["neusW"] = Config(
     vis="viewer",
 )
 
-method_configs["neus_acc"] = Config(
-    method_name="neus_acc",
+method_configs["neus-acc"] = Config(
+    method_name="neus-acc",
     trainer=TrainerConfig(
         steps_per_eval_image=5000,
         steps_per_eval_batch=5000,

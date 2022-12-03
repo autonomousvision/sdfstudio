@@ -19,11 +19,7 @@ Implementation of VolSDF.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple, Type
-
-import torch
-from torchtyping import TensorType
-
+from typing import Dict, Type
 
 from nerfstudio.cameras.rays import RayBundle
 from nerfstudio.field_components.field_heads import FieldHeadNames
@@ -48,7 +44,7 @@ class VolSDFModel(SurfaceModel):
     """VolSDF model
 
     Args:
-        config: MonoSDF configuration to instantiate model
+        config: VolSDF configuration to instantiate model
     """
 
     config: VolSDFModelConfig
@@ -63,81 +59,25 @@ class VolSDFModel(SurfaceModel):
             num_samples_extra=self.config.num_samples_extra,
         )
 
-    def get_outputs(self, ray_bundle: RayBundle):
+    def sample_and_forward_field(self, ray_bundle: RayBundle) -> Dict:
         ray_samples, eik_points = self.sampler(
             ray_bundle, density_fn=self.field.laplace_density, sdf_fn=self.field.get_sdf
         )
         field_outputs = self.field(ray_samples)
-        weights = ray_samples.get_weights(field_outputs[FieldHeadNames.DENSITY])
+        weights, transmittance = ray_samples.get_weights_and_transmittance(field_outputs[FieldHeadNames.DENSITY])
+        bg_transmittance = transmittance[:, -1, :]
 
-        rgb = self.renderer_rgb(rgb=field_outputs[FieldHeadNames.RGB], weights=weights)
-        depth = self.renderer_depth(weights=weights, ray_samples=ray_samples)
-        # the rendered depth is point-to-point distance and we should convert to depth
-        depth = depth / ray_bundle.directions_norm
+        samples_and_field_outputs = {
+            "ray_samples": ray_samples,
+            "eik_points": eik_points,
+            "field_outputs": field_outputs,
+            "weights": weights,
+            "bg_transmittance": bg_transmittance,
+        }
+        return samples_and_field_outputs
 
-        normal = self.renderer_normal(semantics=field_outputs[FieldHeadNames.NORMAL], weights=weights)
-        accumulation = self.renderer_accumulation(weights=weights)
-
-        outputs = {"rgb": rgb, "accumulation": accumulation, "depth": depth, "normal": normal}
-
-        if self.training:
-            grad_points = self.field.gradient(eik_points)
-            outputs.update({"eik_grad": grad_points})
-
-        return outputs
-
-    def get_outputs_flexible(self, ray_bundle: RayBundle, additional_inputs: Dict[str, TensorType]):
-        """run the model with additional inputs such as warping or rendering from unseen rays
-        Args:
-            ray_bundle: containing all the information needed to render that ray latents included
-            additional_inputs: addtional inputs such as images, src_idx, src_cameras
-
-        Returns:
-            dict: information needed for compute gradients
-        """
-        if self.collider is not None:
-            ray_bundle = self.collider(ray_bundle)
-        ray_samples, eik_points = self.sampler(
-            ray_bundle, density_fn=self.field.laplace_density, sdf_fn=self.field.get_sdf
-        )
-        field_outputs = self.field(ray_samples)
-        weights = ray_samples.get_weights(field_outputs[FieldHeadNames.DENSITY])
-        # TODO: warping and other stuff that uses additional inputs
-
-        rgb = self.renderer_rgb(rgb=field_outputs[FieldHeadNames.RGB], weights=weights)
-        depth = self.renderer_depth(weights=weights, ray_samples=ray_samples)
-        # the rendered depth is point-to-point distance and we should convert to depth
-        depth = depth / ray_bundle.directions_norm
-
-        normal = self.renderer_normal(semantics=field_outputs[FieldHeadNames.NORMAL], weights=weights)
-        accumulation = self.renderer_accumulation(weights=weights)
-
-        outputs = {"rgb": rgb, "accumulation": accumulation, "depth": depth, "normal": normal}
-
-        if self.config.patch_warp_loss_mult > 0:
-            # TODO visualize warped results
-            # patch warping
-            warped_patches, valid_mask = self.patch_warping(
-                ray_samples,
-                field_outputs[FieldHeadNames.SDF],
-                field_outputs[FieldHeadNames.NORMAL],
-                additional_inputs["src_cameras"],
-                additional_inputs["src_imgs"],
-                pix_indices=additional_inputs["uv"],
-            )
-
-            outputs.update({"patches": warped_patches, "patches_valid_mask": valid_mask})
-
-        if self.training:
-            grad_points = self.field.gradient(eik_points)
-            outputs.update({"eik_grad": grad_points})
-
-        return outputs
-
-    def get_metrics_dict(self, outputs, batch):
-        metrics_dict = {}
-        image = batch["image"].to(self.device)
-        metrics_dict["psnr"] = self.psnr(outputs["rgb"], image)
+    def get_metrics_dict(self, outputs, batch) -> Dict:
+        metrics_dict = super().get_metrics_dict(outputs, batch)
         if self.training:
             # training statics
             metrics_dict["beta"] = self.field.laplace_density.get_beta().item()

@@ -658,7 +658,7 @@ class ErrorBoundedSampler(Sampler):
             # Upsample more points
             density = density_fn(sdf.reshape(ray_samples.shape), beta=beta.unsqueeze(-1))
 
-            weights, transmittance = ray_samples.get_weights_and_transmitance(density.unsqueeze(-1))
+            weights, transmittance = ray_samples.get_weights_and_transmittance(density.unsqueeze(-1))
 
             #  Check if we are done and this is the last sampling
             total_iters += 1

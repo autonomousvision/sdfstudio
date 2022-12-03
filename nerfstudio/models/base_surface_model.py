@@ -21,6 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Type
 
+from abc import abstractmethod
+
 import torch
 from torch.nn import Parameter
 from torchmetrics import PeakSignalNoiseRatio
@@ -28,7 +30,9 @@ from torchmetrics.functional import structural_similarity_index_measure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from torchtyping import TensorType
 from typing_extensions import Literal
-
+from nerfstudio.field_components.encodings import NeRFEncoding
+from nerfstudio.fields.nerfacto_field import TCNNNerfactoField
+from nerfstudio.fields.vanilla_nerf_field import NeRFField
 from nerfstudio.cameras.rays import RayBundle
 from nerfstudio.field_components.field_heads import FieldHeadNames
 from nerfstudio.field_components.spatial_distortions import SceneContraction
@@ -52,6 +56,8 @@ from nerfstudio.model_components.scene_colliders import NearFarCollider
 from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.utils import colormaps
 from nerfstudio.utils.colors import get_color
+from nerfstudio.model_components.ray_samplers import LinearDisparitySampler
+from nerfstudio.model_components.scene_colliders import SphereCollider
 
 
 @dataclass
@@ -87,6 +93,12 @@ class SurfaceModelConfig(ModelConfig):
     """Number of minimal patch consistency selected for training"""
     sdf_field: SDFFieldConfig = SDFFieldConfig()
     """Config for SDF Field"""
+    background_model: Literal["grid", "mlp", "none"] = "mlp"
+    """background models"""
+    num_samples_outside: int = 32
+    """Number of samples outside the bounding sphere for backgound"""
+    periodic_tvl_mult: float = 0.0
+    """Total variational loss mutliplier"""
 
 
 class SurfaceModel(Model):
@@ -115,6 +127,38 @@ class SurfaceModel(Model):
 
         # Collider
         self.collider = NearFarCollider(near_plane=self.config.near_plane, far_plane=self.config.far_plane)
+
+        # TODO use near far, background-far
+        # TODO change to also suppors other collider such as near and far or bbox colider
+        # sphere collider
+        self.sphere_collider = SphereCollider(radius=1.0, soft_intersection=True)
+
+        # background model
+        if self.config.background_model == "grid":
+            self.field_background = TCNNNerfactoField(
+                self.scene_box.aabb,
+                spatial_distortion=self.scene_contraction,
+                num_images=self.num_train_data,
+                use_average_appearance_embedding=self.config.use_average_appearance_embedding,
+            )
+        elif self.config.background_model == "mlp":
+            position_encoding = NeRFEncoding(
+                in_dim=3, num_frequencies=10, min_freq_exp=0.0, max_freq_exp=9.0, include_input=True
+            )
+            direction_encoding = NeRFEncoding(
+                in_dim=3, num_frequencies=4, min_freq_exp=0.0, max_freq_exp=3.0, include_input=True
+            )
+
+            self.field_background = NeRFField(
+                position_encoding=position_encoding,
+                direction_encoding=direction_encoding,
+                spatial_distortion=self.scene_contraction,
+            )
+        else:
+            # dummy background model
+            self.field_background = Parameter(torch.ones(1), requires_grad=False)
+
+        self.sampler_bg = LinearDisparitySampler(num_samples=self.config.num_samples_outside)
 
         # renderers
         background_color = (
@@ -147,9 +191,118 @@ class SurfaceModel(Model):
     def get_param_groups(self) -> Dict[str, List[Parameter]]:
         param_groups = {}
         param_groups["fields"] = list(self.field.parameters())
+        if self.config.background_model != "none":
+            param_groups["field_background"] = list(self.field_background.parameters())
+        else:
+            param_groups["field_background"] = list(self.field_background)
         return param_groups
 
-    def get_loss_dict(self, outputs, batch, metrics_dict=None):
+    @abstractmethod
+    def sample_and_forward_field(self, ray_bundle: RayBundle) -> Dict:
+        """_summary_
+
+        Args:
+            ray_bundle (RayBundle): _description_
+            return_samples (bool, optional): _description_. Defaults to False.
+        """
+
+    def get_outputs(self, ray_bundle: RayBundle) -> Dict:
+        # TODO make this configurable
+        # compute near and far from from sphere with radius 1.0
+        # ray_bundle = self.sphere_collider(ray_bundle)
+
+        samples_and_field_outputs = self.sample_and_forward_field(ray_bundle=ray_bundle)
+
+        # Shotscuts
+        field_outputs = samples_and_field_outputs["field_outputs"]
+        ray_samples = samples_and_field_outputs["ray_samples"]
+        weights = samples_and_field_outputs["weights"]
+        bg_transmittance = samples_and_field_outputs["bg_transmittance"]
+
+        rgb = self.renderer_rgb(rgb=field_outputs[FieldHeadNames.RGB], weights=weights)
+        depth = self.renderer_depth(weights=weights, ray_samples=ray_samples)
+        # the rendered depth is point-to-point distance and we should convert to depth
+        depth = depth / ray_bundle.directions_norm
+
+        normal = self.renderer_normal(semantics=field_outputs[FieldHeadNames.NORMAL], weights=weights)
+        accumulation = self.renderer_accumulation(weights=weights)
+
+        # background model
+        if self.config.background_model != "none":
+            # TODO remove hard-coded far value
+            # sample inversely from far to 1000 and points and forward the bg model
+            ray_bundle.nears = ray_bundle.fars
+            ray_bundle.fars = torch.ones_like(ray_bundle.fars) * self.config.far_plane_bg
+
+            ray_samples_bg = self.sampler_bg(ray_bundle)
+            # use the same background model for both density field and occupancy field
+            field_outputs_bg = self.field_background(ray_samples_bg)
+            weights_bg = ray_samples_bg.get_weights(field_outputs_bg[FieldHeadNames.DENSITY])
+
+            rgb_bg = self.renderer_rgb(rgb=field_outputs_bg[FieldHeadNames.RGB], weights=weights_bg)
+            depth_bg = self.renderer_depth(weights=weights_bg, ray_samples=ray_samples_bg)
+            accumulation_bg = self.renderer_accumulation(weights=weights_bg)
+
+            # merge background color to forgound color
+            rgb = rgb + bg_transmittance * rgb_bg
+
+            bg_outputs = {
+                "bg_rgb": rgb_bg,
+                "bg_accumulation": accumulation_bg,
+                "bg_depth": depth_bg,
+                "bg_weights": weights_bg,
+            }
+        else:
+            bg_outputs = {}
+
+        outputs = {"rgb": rgb, "accumulation": accumulation, "depth": depth, "normal": normal, "weights": weights}
+        outputs.update(bg_outputs)
+
+        if self.training:
+            grad_points = field_outputs[FieldHeadNames.GRADIENT]
+            outputs.update({"eik_grad": grad_points})
+
+            # TODO volsdf use different point set for eikonal loss
+            # grad_points = self.field.gradient(eik_points)
+            # outputs.update({"eik_grad": grad_points})
+
+            outputs.update(samples_and_field_outputs)
+
+        return outputs
+
+    def get_outputs_flexible(self, ray_bundle: RayBundle, additional_inputs: Dict[str, TensorType]) -> Dict:
+        """run the model with additional inputs such as warping or rendering from unseen rays
+        Args:
+            ray_bundle: containing all the information needed to render that ray latents included
+            additional_inputs: addtional inputs such as images, src_idx, src_cameras
+
+        Returns:
+            dict: information needed for compute gradients
+        """
+        if self.collider is not None:
+            ray_bundle = self.collider(ray_bundle)
+
+        outputs = self.get_outputs(ray_bundle)
+
+        ray_samples = outputs["ray_samples"]
+        field_outputs = outputs["field_outputs"]
+
+        if self.config.patch_warp_loss_mult > 0:
+            # patch warping
+            warped_patches, valid_mask = self.patch_warping(
+                ray_samples,
+                field_outputs[FieldHeadNames.SDF],
+                field_outputs[FieldHeadNames.NORMAL],
+                additional_inputs["src_cameras"],
+                additional_inputs["src_imgs"],
+                pix_indices=additional_inputs["uv"],
+            )
+
+            outputs.update({"patches": warped_patches, "patches_valid_mask": valid_mask})
+
+        return outputs
+
+    def get_loss_dict(self, outputs, batch, metrics_dict=None) -> Dict:
         loss_dict = {}
         image = batch["image"].to(self.device)
         loss_dict["rgb_loss"] = self.rgb_loss(image, outputs["rgb"])
@@ -179,6 +332,7 @@ class SurfaceModel(Model):
                     * self.config.mono_depth_loss_mult
                 )
 
+            # multi-view photoconsistency loss as Geo-NeuS
             if "patches" in outputs and self.config.patch_warp_loss_mult > 0.0:
                 patches = outputs["patches"]
                 patches_valid_mask = outputs["patches_valid_mask"]
@@ -187,7 +341,18 @@ class SurfaceModel(Model):
                     self.patch_loss(patches, patches_valid_mask) * self.config.patch_warp_loss_mult
                 )
 
+            # total variational loss for multi-resolution periodic feature volume
+            if self.config.periodic_tvl_mult > 0.0:
+                assert self.field.config.encoding_type == "periodic"
+                loss_dict["tvl_loss"] = self.field.encoding.get_total_variation_loss() * self.config.periodic_tvl_mult
+
         return loss_dict
+
+    def get_metrics_dict(self, outputs, batch) -> Dict:
+        metrics_dict = {}
+        image = batch["image"].to(self.device)
+        metrics_dict["psnr"] = self.psnr(outputs["rgb"], image)
+        return metrics_dict
 
     def get_image_metrics_and_images(
         self, outputs: Dict[str, torch.Tensor], batch: Dict[str, torch.Tensor]

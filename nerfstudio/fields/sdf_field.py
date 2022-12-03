@@ -514,17 +514,18 @@ class SDFField(Field):
                 FieldHeadNames.DENSITY: density,
                 FieldHeadNames.SDF: sdf,
                 FieldHeadNames.NORMAL: normals,
+                FieldHeadNames.GRADIENT: gradients,
             }
         )
 
         if return_alphas:
             # TODO use mid point sdf for NeuS
             alphas = self.get_alpha(ray_samples, sdf, gradients)
-            outputs.update({FieldHeadNames.ALPHA: alphas, FieldHeadNames.GRADIENT: gradients})
+            outputs.update({FieldHeadNames.ALPHA: alphas})
 
         if return_occupancy:
             occupancy = self.get_occupancy(sdf)
-            outputs.update({FieldHeadNames.OCCUPANCY: occupancy, FieldHeadNames.GRADIENT: gradients})
+            outputs.update({FieldHeadNames.OCCUPANCY: occupancy})
 
         return outputs
 
