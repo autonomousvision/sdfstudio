@@ -88,10 +88,10 @@ class NeuSAccModel(NeuSModel):
 
         return callbacks
 
-    def get_outputs(self, ray_bundle: RayBundle, return_samples=False):
+    def get_outputs(self, ray_bundle: RayBundle):
         # bootstrap with original Neus
         if self.sampler._update_counter.item() <= 0:
-            return super().get_outputs(ray_bundle, return_samples)
+            return super().get_outputs(ray_bundle)
 
         ray_samples, ray_indices = self.sampler(ray_bundle, sdf_fn=self.field.get_sdf, alpha_fn=self.field.get_alpha)
 
