@@ -92,17 +92,17 @@ descriptions = {
 method_configs["neus-facto"] = Config(
     method_name="neus-facto",
     trainer=TrainerConfig(
-        steps_per_eval_image=500,
+        steps_per_eval_image=5000,
         steps_per_eval_batch=5000,
         steps_per_save=20000,
         steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
-        max_num_iterations=100000,
+        max_num_iterations=20001,
         mixed_precision=False,
     ),
     pipeline=VanillaPipelineConfig(
         datamanager=VanillaDataManagerConfig(
             dataparser=UniSceneDataParserConfig(),
-            train_num_rays_per_batch=1024,
+            train_num_rays_per_batch=2048,
             eval_num_rays_per_batch=1024,
             camera_optimizer=CameraOptimizerConfig(
                 mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
@@ -113,15 +113,15 @@ method_configs["neus-facto"] = Config(
     optimizers={
         "proposal_networks": {
             "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
-            "scheduler": MultiStepSchedulerConfig(max_steps=30000),
+            "scheduler": MultiStepSchedulerConfig(max_steps=20000),
         },
         "fields": {
             "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
-            "scheduler": NeuSSchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=30000),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=20000),
         },
         "field_background": {
             "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
-            "scheduler": NeuSSchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=30000),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=20000),
         },
     },
     viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
