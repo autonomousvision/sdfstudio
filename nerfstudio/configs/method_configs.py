@@ -53,6 +53,7 @@ from nerfstudio.models.nerfacto import NerfactoModelConfig
 from nerfstudio.models.neuralreconW import NeuralReconWModelConfig
 from nerfstudio.models.neus import NeuSModelConfig
 from nerfstudio.models.neus_acc import NeuSAccModelConfig
+from nerfstudio.models.neus_facto import NeuSFactoModelConfig
 from nerfstudio.models.semantic_nerfw import SemanticNerfWModelConfig
 from nerfstudio.models.tensorf import TensoRFModelConfig
 from nerfstudio.models.unisurf import UniSurfModelConfig
@@ -85,7 +86,47 @@ descriptions = {
     "dto": "Occupancy field with density guided sampling",
     "neusW": "Implementation of Neural Reconstruction in the wild",
     "neus-acc": "Implementation of NeuS with empty space skipping.",
+    "neus-facto": "Implementation of NeuS similar to nerfacto where proposal sampler is used.",
 }
+
+method_configs["neus-facto"] = Config(
+    method_name="neus-facto",
+    trainer=TrainerConfig(
+        steps_per_eval_image=500,
+        steps_per_eval_batch=5000,
+        steps_per_save=20000,
+        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
+        max_num_iterations=100000,
+        mixed_precision=False,
+    ),
+    pipeline=VanillaPipelineConfig(
+        datamanager=VanillaDataManagerConfig(
+            dataparser=UniSceneDataParserConfig(),
+            train_num_rays_per_batch=1024,
+            eval_num_rays_per_batch=1024,
+            camera_optimizer=CameraOptimizerConfig(
+                mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
+            ),
+        ),
+        model=NeuSFactoModelConfig(eval_num_rays_per_chunk=1024),
+    ),
+    optimizers={
+        "proposal_networks": {
+            "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
+            "scheduler": MultiStepSchedulerConfig(max_steps=30000),
+        },
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=30000),
+        },
+        "field_background": {
+            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=30000),
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer",
+)
 
 method_configs["geo-volsdf"] = Config(
     method_name="geo-volsdf",

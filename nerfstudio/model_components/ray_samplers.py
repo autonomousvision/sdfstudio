@@ -506,6 +506,7 @@ class ProposalNetworkSampler(Sampler):
         num_proposal_samples_per_ray: Tuple[int] = (64,),
         num_nerf_samples_per_ray: int = 32,
         num_proposal_network_iterations: int = 2,
+        use_uniform_sampler: bool = False,
         single_jitter: bool = False,
         update_sched: Callable = lambda x: 1,
     ) -> None:
@@ -517,8 +518,11 @@ class ProposalNetworkSampler(Sampler):
         if self.num_proposal_network_iterations < 1:
             raise ValueError("num_proposal_network_iterations must be >= 1")
 
-        # samplers
-        self.initial_sampler = UniformLinDispPiecewiseSampler(single_jitter=single_jitter)
+        if use_uniform_sampler:
+            self.initial_sampler = UniformSampler(single_jitter=single_jitter)
+        else:
+            self.initial_sampler = UniformLinDispPiecewiseSampler(single_jitter=single_jitter)
+
         self.pdf_sampler = PDFSampler(include_original=False, single_jitter=single_jitter)
 
         self._anneal = 1.0

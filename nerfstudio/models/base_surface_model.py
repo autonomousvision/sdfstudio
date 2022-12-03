@@ -268,6 +268,16 @@ class SurfaceModel(Model):
 
             outputs.update(samples_and_field_outputs)
 
+        # TODO how can we move it to neus_facto without out of memory
+        if "weights_list" in samples_and_field_outputs:
+            weights_list = samples_and_field_outputs["weights_list"]
+            ray_samples_list = samples_and_field_outputs["ray_samples_list"]
+
+            for i in range(len(weights_list) - 1):
+                outputs[f"prop_depth_{i}"] = self.renderer_depth(
+                    weights=weights_list[i], ray_samples=ray_samples_list[i]
+                )
+
         return outputs
 
     def get_outputs_flexible(self, ray_bundle: RayBundle, additional_inputs: Dict[str, TensorType]) -> Dict:
