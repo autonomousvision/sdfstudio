@@ -140,6 +140,8 @@ class UniSceneDataParserConfig(DataParserConfig):
         "center_crop_for_replica", "center_crop_for_tnt", "center_crop_for_dtu", "no_crop"
     ] = "center_crop_for_dtu"
     """center crop type as monosdf, we should create a dataset that don't need this"""
+    load_pairs: bool = False
+    """whether to load pairs for multi-view consistency"""
     neighbors_num: Optional[int] = None
     neighbors_shuffle: Optional[bool] = False
     pairs_sorted_ascending: Optional[bool] = True
@@ -315,7 +317,7 @@ class UniScene(DataParser):
             additional_inputs_dict = {}
 
         pairs_path = self.config.data / "pairs.txt"
-        if pairs_path.exists() and split == "train":
+        if pairs_path.exists() and split == "train" and self.config.load_pairs:
             with open(pairs_path, "r") as f:
                 pairs = f.readlines()
             split_ext = lambda x: x.split(".")[0]
