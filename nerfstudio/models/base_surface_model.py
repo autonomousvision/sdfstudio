@@ -376,7 +376,7 @@ class SurfaceModel(Model):
         # don't need to normalize here
         # normal = torch.nn.functional.normalize(normal, p=2, dim=-1)
         normal = (normal + 1.0) / 2.0
-        breakpoint()
+
         combined_rgb = torch.cat([image, rgb], dim=1)
         combined_acc = torch.cat([acc], dim=1)
         if "depth" in batch:
