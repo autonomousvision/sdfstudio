@@ -487,7 +487,7 @@ method_configs["dto"] = Config(
 method_configs["neusW"] = Config(
     method_name="neusW",
     trainer=TrainerConfig(
-        steps_per_eval_image=2000,
+        steps_per_eval_image=5000,
         steps_per_eval_batch=5000,
         steps_per_save=5000,
         steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
@@ -503,11 +503,13 @@ method_configs["neusW"] = Config(
                 mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
             ),
         ),
-        model=NeuralReconWModelConfig(eval_num_rays_per_chunk=1 << 10),
+        model=NeuralReconWModelConfig(
+            background_model="grid", num_samples_outside=4, eikonal_loss_mult=0.0001, eval_num_rays_per_chunk=1 << 10
+        ),
     ),
     optimizers={
         "fields": {
-            "optimizer": AdamOptimizerConfig(lr=5e-4, eps=1e-15),
+            "optimizer": AdamOptimizerConfig(lr=1e-3, eps=1e-15),
             "scheduler": NeuSSchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=300000),
         },
         "field_background": {
@@ -516,7 +518,7 @@ method_configs["neusW"] = Config(
         },
     },
     viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
-    vis="viewer",
+    vis="wandb",
 )
 
 method_configs["neus-acc"] = Config(
