@@ -262,15 +262,9 @@ class UniScene(DataParser):
 
                 # transform normal to world coordinate system
                 rot = camera_to_worlds[idx][:3, :3].clone()
-                # composite rotation matrix to nerfstudio
-                rot[:, 1:3] *= -1
-                rot = rot[np.array([1, 0, 2]), :]
-                rot[2, :] *= -1
 
                 normal_map = normal.reshape(3, -1)
                 normal_map = torch.nn.functional.normalize(normal_map, p=2, dim=0)
-                # because y and z is flipped
-                normal_map[1:3, :] *= -1
 
                 normal_map = rot @ normal_map
                 normal_map = normal_map.permute(1, 0).reshape(*normal.shape[1:], 3)
@@ -285,22 +279,17 @@ class UniScene(DataParser):
 
         # Convert from COLMAP's/OPENCV's camera coordinate system to nerfstudio
         camera_to_worlds[:, 0:3, 1:3] *= -1
-        camera_to_worlds = camera_to_worlds[:, np.array([1, 0, 2, 3]), :]
-        camera_to_worlds[:, 2, :] *= -1
 
         # camera_to_worlds = random_rotation[None] @ camera_to_worlds
 
         scene_box = SceneBox(aabb=torch.tensor([[-1.0, -1.0, -1.0], [1.0, 1.0, 1.0]], dtype=torch.float32))
 
-        # assert torch.all(cx[0] == cx), "Not all cameras have the same cx. Our Cameras class does not support this."
-        # assert torch.all(cy[0] == cy), "Not all cameras have the same cy. Our Cameras class does not support this."
-
         height, width = get_image(image_filenames[0]).shape[:2]
         cameras = Cameras(
             fx=fx,
             fy=fy,
-            cx=cx,  # float(cx[0]),
-            cy=cy,  # float(cy[0]),
+            cx=cx,
+            cy=cy,
             height=height,
             width=width,
             camera_to_worlds=camera_to_worlds[:, :3, :4],

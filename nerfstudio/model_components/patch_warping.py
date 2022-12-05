@@ -15,18 +15,13 @@
 """
 Implementation of patch warping for multi-view consistency loss.
 """
-import math
-from typing import Optional, Union
 
+import numpy as np
 import torch
 from torch import nn
-from torchtyping import TensorType
-from typing_extensions import Literal
-import numpy as np
 
 from nerfstudio.cameras.cameras import Cameras
 from nerfstudio.cameras.rays import RaySamples
-from nerfstudio.model_components.ray_samplers import save_points
 
 
 def get_intersection_points(
@@ -114,25 +109,6 @@ def get_homography(
 
     # convert camera to opencv format
     c2w[:, :3, 1:3] *= -1
-    c2w = c2w[:, np.array([1, 0, 2]), :]
-    c2w[:, 2, :] *= -1
-
-    T1 = np.array([[1, 0, 0, 0], [0, -1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]], dtype=np.float32)
-    T1 = torch.from_numpy(T1).to(device)
-
-    T2 = np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]], dtype=np.float32)
-    T2 = torch.from_numpy(T2).to(device)
-
-    T3 = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, -1, 0], [0, 0, 0, 1]], dtype=np.float32)
-    T3 = torch.from_numpy(T3).to(device)
-
-    T = T3 @ T2
-    T_inv = torch.linalg.inv(T)
-
-    # also for points and normal
-    intersection_points = intersection_points @ T_inv[:3, :3]
-    normal = normal @ T_inv[:3, :3]
-    # end convert
 
     w2c_r = c2w[:, :3, :3].transpose(1, 2)
     w2c_t = -w2c_r @ c2w[:, :3, 3:]
