@@ -18,10 +18,9 @@ Implementation of Base surface model.
 
 from __future__ import annotations
 
+from abc import abstractmethod
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Type
-
-from abc import abstractmethod
 
 import torch
 from torch.nn import Parameter
@@ -30,13 +29,14 @@ from torchmetrics.functional import structural_similarity_index_measure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from torchtyping import TensorType
 from typing_extensions import Literal
-from nerfstudio.field_components.encodings import NeRFEncoding
-from nerfstudio.fields.nerfacto_field import TCNNNerfactoField
-from nerfstudio.fields.vanilla_nerf_field import NeRFField
+
 from nerfstudio.cameras.rays import RayBundle
+from nerfstudio.field_components.encodings import NeRFEncoding
 from nerfstudio.field_components.field_heads import FieldHeadNames
 from nerfstudio.field_components.spatial_distortions import SceneContraction
+from nerfstudio.fields.nerfacto_field import TCNNNerfactoField
 from nerfstudio.fields.sdf_field import SDFFieldConfig
+from nerfstudio.fields.vanilla_nerf_field import NeRFField
 from nerfstudio.model_components.losses import (
     L1Loss,
     MSELoss,
@@ -46,18 +46,17 @@ from nerfstudio.model_components.losses import (
     monosdf_normal_loss,
 )
 from nerfstudio.model_components.patch_warping import PatchWarping
+from nerfstudio.model_components.ray_samplers import LinearDisparitySampler
 from nerfstudio.model_components.renderers import (
     AccumulationRenderer,
     DepthRenderer,
     RGBRenderer,
     SemanticRenderer,
 )
-from nerfstudio.model_components.scene_colliders import NearFarCollider
+from nerfstudio.model_components.scene_colliders import NearFarCollider, SphereCollider
 from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.utils import colormaps
 from nerfstudio.utils.colors import get_color
-from nerfstudio.model_components.ray_samplers import LinearDisparitySampler
-from nerfstudio.model_components.scene_colliders import SphereCollider
 
 
 @dataclass
@@ -277,7 +276,8 @@ class SurfaceModel(Model):
                 outputs[f"prop_depth_{i}"] = self.renderer_depth(
                     weights=weights_list[i], ray_samples=ray_samples_list[i]
                 )
-
+        # TODO this is used in viewer
+        # outputs["normal"] = (outputs["normal"] + 1.0) / 2.0
         return outputs
 
     def get_outputs_flexible(self, ray_bundle: RayBundle, additional_inputs: Dict[str, TensorType]) -> Dict:
@@ -376,7 +376,7 @@ class SurfaceModel(Model):
         # don't need to normalize here
         # normal = torch.nn.functional.normalize(normal, p=2, dim=-1)
         normal = (normal + 1.0) / 2.0
-
+        breakpoint()
         combined_rgb = torch.cat([image, rgb], dim=1)
         combined_acc = torch.cat([acc], dim=1)
         if "depth" in batch:
