@@ -276,8 +276,8 @@ class SurfaceModel(Model):
                 outputs[f"prop_depth_{i}"] = self.renderer_depth(
                     weights=weights_list[i], ray_samples=ray_samples_list[i]
                 )
-        # TODO this is used in viewer
-        # outputs["normal"] = (outputs["normal"] + 1.0) / 2.0
+        # this is used only in viewer
+        outputs["normal_vis"] = (outputs["normal"] + 1.0) / 2.0
         return outputs
 
     def get_outputs_flexible(self, ray_bundle: RayBundle, additional_inputs: Dict[str, TensorType]) -> Dict:
