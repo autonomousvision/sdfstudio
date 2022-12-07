@@ -112,6 +112,8 @@ class SDFStudioDataParserConfig(DataParserConfig):
     pairs_sorted_ascending: Optional[bool] = True
     """if src image pairs are sorted in ascending order by similarity i.e. 
     the last element is the most similar to the first (ref)"""
+    skip_every_for_val_split: int = 1
+    """sub sampling validation images"""
 
 
 @dataclass
@@ -124,6 +126,11 @@ class SDFStudio(DataParser):
         # load meta data
         meta = load_from_json(self.config.data / "meta_data.json")
 
+        indices = list(range(len(meta["frames"])))
+        # subsample to avoid out-of-memory for validation set
+        if split != "train" and self.config.skip_every_for_val_split >= 1:
+            indices = indices[:: self.config.skip_every_for_val_split]
+
         image_filenames = []
         depth_images = []
         normal_images = []
@@ -132,7 +139,9 @@ class SDFStudio(DataParser):
         cx = []
         cy = []
         camera_to_worlds = []
-        for frame in meta["frames"]:
+        for i, frame in enumerate(meta["frames"]):
+            if i not in indices:
+                continue
 
             image_filename = self.config.data / frame["rgb_path"]
 
