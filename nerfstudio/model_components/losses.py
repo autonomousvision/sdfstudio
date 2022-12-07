@@ -429,6 +429,10 @@ class MultiViewLoss(nn.Module):
             _type_: _description_
         """
         num_imgs, num_rays, _, num_channels = patches.shape
+
+        if num_rays <= 0:
+            return torch.tensor(0.0).to(patches.device)
+
         ref_patches = (
             patches[:1, ...]
             .reshape(1, num_rays, self.patch_size, self.patch_size, num_channels)

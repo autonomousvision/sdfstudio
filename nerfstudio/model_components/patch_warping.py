@@ -130,7 +130,11 @@ def get_homography(
     dir_src = torch.nn.functional.normalize(c2w[:, None, :, 3] - intersection_points[None], dim=-1)
     valid = (dir_src * normal[None]).sum(dim=-1) > valid_angle_thres
 
-    return H, valid
+    # point should be in front of cameras
+    p_src = w2c[:, :3, :3] @ intersection_points.transpose(1, 0) + w2c[:, :3, 3:]  # [:, 3, n_pts]
+    valid_2 = p_src[:, 2, :] > 0.01
+
+    return H, valid & valid_2
 
 
 class PatchWarping(nn.Module):
@@ -190,7 +194,11 @@ class PatchWarping(nn.Module):
         )  # [1, n_pts, 3, patch_h*patch_w]
 
         warped_indices = H @ pix_indices
-        warped_indices = warped_indices[:, :, :2, :] / warped_indices[:, :, 2:, :]
+
+        # patches after warping should have positive depth
+        positive_depth_mask = warped_indices[:, :, 2, :] >= 0.2
+        warped_indices[:, :, 2, :] *= positive_depth_mask
+        warped_indices = warped_indices[:, :, :2, :] / (warped_indices[:, :, 2:, :] + 1e-6)
 
         pix_coords = warped_indices.permute(0, 1, 3, 2).contiguous()  # [..., :2]
         pix_coords[..., 0:1] /= cameras.image_width[:, None, None].to(device) - 1
@@ -206,7 +214,7 @@ class PatchWarping(nn.Module):
         )  # [n_imgs, n_rays_valid, patch_h*patch_w]
 
         # combine valid with H
-        valid = valid & H_valid_mask[..., None]
+        valid = valid & H_valid_mask[..., None] & positive_depth_mask
 
         rgb = torch.nn.functional.grid_sample(
             images.permute(0, 3, 1, 2).to(sdf.device),
@@ -231,6 +239,4 @@ class PatchWarping(nn.Module):
             )
 
             cv2.imwrite("vis.png", (image.detach().cpu().numpy() * 255).astype(np.uint8)[..., ::-1])
-            breakpoint()
-
         return rgb, valid
