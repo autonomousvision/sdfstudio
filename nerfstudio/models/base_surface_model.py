@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Type
 
 import torch
+import torch.nn.functional as F
 from torch.nn import Parameter
 from torchmetrics import PeakSignalNoiseRatio
 from torchmetrics.functional import structural_similarity_index_measure
@@ -80,6 +81,8 @@ class SurfaceModelConfig(ModelConfig):
     """Whether to use average appearance embedding or zeros for inference."""
     eikonal_loss_mult: float = 0.1
     """Monocular normal consistency loss multiplier."""
+    fg_mask_loss_mult: float = 0.01
+    """Foreground mask loss multiplier."""
     mono_normal_loss_mult: float = 0.0
     """Monocular normal consistency loss multiplier."""
     mono_depth_loss_mult: float = 0.0
@@ -333,6 +336,14 @@ class SurfaceModel(Model):
             # eikonal loss
             grad_theta = outputs["eik_grad"]
             loss_dict["eikonal_loss"] = ((grad_theta.norm(2, dim=-1) - 1) ** 2).mean() * self.config.eikonal_loss_mult
+
+            # foreground mask loss
+            if "fg_mask" in batch and self.config.fg_mask_loss_mult > 0.0:
+                fg_label = 1.0 - batch["fg_mask"].float().to(self.device)
+                weights_sum = outputs["weights"].sum(dim=1).clip(1e-3, 1.0 - 1e-3)
+                loss_dict["fg_mask_loss"] = (
+                    F.binary_cross_entropy(weights_sum, fg_label) * self.config.fg_mask_loss_mult
+                )
 
             # monocular normal loss
             if "normal" in batch and self.config.mono_normal_loss_mult > 0.0:

@@ -90,7 +90,7 @@ def collate_image_dataset_batch_list(batch: Dict, num_rays_per_batch: int, keep_
     # only sample within the mask, if the mask is in the batch
     all_indices = []
     all_images = []
-    all_skys = []
+    all_fg_masks = []
 
     if "mask" in batch:
         num_rays_in_batch = num_rays_per_batch // num_images
@@ -105,7 +105,7 @@ def collate_image_dataset_batch_list(batch: Dict, num_rays_per_batch: int, keep_
             indices = torch.cat([torch.full((num_rays_in_batch, 1), i, device=device), indices], dim=-1)
             all_indices.append(indices)
             all_images.append(batch["image"][i][indices[:, 1], indices[:, 2]])
-            all_skys.append(batch["sky"][i][indices[:, 1], indices[:, 2]])
+            all_fg_masks.append(batch["fg_mask"][i][indices[:, 1], indices[:, 2]])
 
     else:
         num_rays_in_batch = num_rays_per_batch // num_images
@@ -120,7 +120,7 @@ def collate_image_dataset_batch_list(batch: Dict, num_rays_per_batch: int, keep_
             indices[:, 0] = i
             all_indices.append(indices)
             all_images.append(batch["image"][i][indices[:, 1], indices[:, 2]])
-            all_skys.append(batch["sky"][i][indices[:, 1], indices[:, 2]])
+            all_fg_masks.append(batch["fg_mask"][i][indices[:, 1], indices[:, 2]])
 
     indices = torch.cat(all_indices, dim=0)
 
@@ -131,13 +131,13 @@ def collate_image_dataset_batch_list(batch: Dict, num_rays_per_batch: int, keep_
         if key != "image_idx"
         and key != "image"
         and key != "mask"
-        and key != "sky"
+        and key != "fg_mask"
         and key != "sparse_pts"
         and value is not None
     }
 
     collated_batch["image"] = torch.cat(all_images, dim=0)
-    collated_batch["sky"] = torch.cat(all_skys, dim=0)
+    collated_batch["fg_mask"] = torch.cat(all_fg_masks, dim=0)
 
     if "sparse_pts" in batch:
         rand_idx = random.randint(0, num_images - 1)
@@ -186,8 +186,9 @@ class PixelSampler:  # pylint: disable=too-few-public-methods
             image_batch["image"] = image_batch["image"].images
             if "mask" in image_batch:
                 image_batch["mask"] = image_batch["mask"].images
-            if "sky" in image_batch:
-                image_batch["sky"] = image_batch["sky"].images
+            # TODO clean up
+            if "fg_mask" in image_batch:
+                image_batch["fg_mask"] = image_batch["fg_mask"].images
             if "sparse_pts" in image_batch:
                 image_batch["sparse_pts"] = image_batch["sparse_pts"].images
             pixel_batch = collate_image_dataset_batch_list(

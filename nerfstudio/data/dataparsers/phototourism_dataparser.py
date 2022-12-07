@@ -45,7 +45,7 @@ from nerfstudio.utils.images import BasicImages
 CONSOLE = Console(width=120)
 
 
-def get_masks(image_idx: int, masks, skys, sparse_pts):
+def get_masks(image_idx: int, masks, fg_masks, sparse_pts):
     """function to process additional mask information
 
     Args:
@@ -57,15 +57,15 @@ def get_masks(image_idx: int, masks, skys, sparse_pts):
     mask = masks[image_idx]
     mask = BasicImages([mask])
 
-    # sky
-    sky = skys[image_idx]
-    sky = BasicImages([sky])
+    # foreground mask
+    fg_mask = fg_masks[image_idx]
+    fg_mask = BasicImages([fg_mask])
 
     # sparse_pts
     pts = sparse_pts[image_idx]
     pts = BasicImages([pts])
 
-    return {"mask": mask, "sky": sky, "sparse_pts": pts}
+    return {"mask": mask, "fg_mask": fg_mask, "sparse_pts": pts}
 
 
 @dataclass
@@ -146,7 +146,7 @@ class Phototourism(DataParser):
         mask_filenames = []
         semantic_filenames = []
         masks = []
-        skys = []
+        fg_masks = []
         sparse_pts = []
 
         flip = torch.eye(3)
@@ -178,10 +178,10 @@ class Phototourism(DataParser):
             nonzero_indices = torch.nonzero(mask[..., 0], as_tuple=False)
             masks.append(nonzero_indices)
 
-            # load sky
+            # load sky segmentation and it's used as foreground mask
             semantic = np.load(semantic_filenames[-1])["arr_0"]
             is_sky = semantic == 2  # sky id is 2
-            skys.append(torch.from_numpy(is_sky).unsqueeze(-1))
+            fg_masks.append(torch.from_numpy(is_sky).unsqueeze(-1))
 
             # load sparse 3d points for each view
             # visualize pts3d for each image
@@ -355,7 +355,7 @@ class Phototourism(DataParser):
         cameras = cameras[indices]
         image_filenames = [image_filenames[i] for i in indices]
         masks = [masks[i] for i in indices]
-        skys = [skys[i] for i in indices]
+        fg_masks = [fg_masks[i] for i in indices]
         sparse_pts = [sparse_pts[i] for i in indices]
 
         assert len(cameras) == len(image_filenames)
@@ -365,7 +365,7 @@ class Phototourism(DataParser):
             cameras=cameras,
             scene_box=scene_box,
             additional_inputs={
-                "masks": {"func": get_masks, "kwargs": {"masks": masks, "skys": skys, "sparse_pts": sparse_pts}}
+                "masks": {"func": get_masks, "kwargs": {"masks": masks, "fg_masks": fg_masks, "sparse_pts": sparse_pts}}
             },
         )
 

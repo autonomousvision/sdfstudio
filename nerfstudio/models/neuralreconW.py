@@ -21,8 +21,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Type
 
-import torch.nn.functional as F
-
 from nerfstudio.engine.callbacks import (
     TrainingCallback,
     TrainingCallbackAttributes,
@@ -38,8 +36,6 @@ class NeuralReconWModelConfig(NeuSModelConfig):
     """UniSurf Model Config"""
 
     _target: Type = field(default_factory=lambda: NeuralReconWModel)
-    sky_loss_mult: float = 0.01
-    """Sky segmentation normal consistency loss multiplier."""
 
 
 class NeuralReconWModel(NeuSModel):
@@ -59,7 +55,8 @@ class NeuralReconWModel(NeuSModel):
         self.sampler = NeuralReconWSampler(
             aabb=self.scene_box.aabb, coarse_binary_grid=self.scene_box.coarse_binary_gird
         )
-        self.sphere_collider = SphereCollider(radius=1.0, soft_intersection=False)
+        # Neural Reconstruction in the wild use sphere collider so we overwrite it here
+        self.collider = SphereCollider(radius=1.0, soft_intersection=False)
 
     def get_training_callbacks(
         self, training_callback_attributes: TrainingCallbackAttributes
@@ -78,13 +75,3 @@ class NeuralReconWModel(NeuSModel):
         )
 
         return callbacks
-
-    def get_loss_dict(self, outputs, batch, metrics_dict=None):
-        loss_dict = super().get_loss_dict(outputs, batch, metrics_dict)
-
-        if self.training and "sky" in batch:
-            sky_label = 1.0 - batch["sky"].float().to(self.device)
-            weights_sum = outputs["weights"].sum(dim=1).clip(1e-3, 1.0 - 1e-3)
-            loss_dict["sky_loss"] = F.binary_cross_entropy(weights_sum, sky_label) * self.config.sky_loss_mult
-
-        return loss_dict
