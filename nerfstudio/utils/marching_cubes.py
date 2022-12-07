@@ -1,4 +1,5 @@
 import numpy as np
+import pymeshlab
 import torch
 import trimesh
 from skimage import measure
@@ -8,8 +9,12 @@ upsample = torch.nn.Upsample(scale_factor=2, mode="nearest")
 
 
 @torch.no_grad()
-def get_surface_sliding(sdf, resolution=512, grid_boundary=[-0.5, 0.5], return_mesh=False, level=0):
+def get_surface_sliding(sdf, resolution=512, grid_boundary=[-0.5, 0.5], return_mesh=False, level=0, coarse_mask=None):
     assert resolution % 512 == 0
+    if coarse_mask is not None:
+        # we need to permute here as pytorch's grid_sample use (z, y, x)
+        coarse_mask = coarse_mask.permute(2, 1, 0)[None, None].cuda().float()
+
     resN = resolution
     cropN = 512
     level = 0
@@ -49,6 +54,14 @@ def get_surface_sliding(sdf, resolution=512, grid_boundary=[-0.5, 0.5], return_m
 
                 # construct point pyramids
                 points = points.reshape(cropN, cropN, cropN, 3).permute(3, 0, 1, 2)
+                if coarse_mask is not None:
+                    # breakpoint()
+                    points_tmp = points.permute(1, 2, 3, 0)[None].cuda()
+                    current_mask = torch.nn.functional.grid_sample(coarse_mask, points_tmp)
+                    current_mask = (current_mask > 0.0).cpu().numpy()[0, 0]
+                else:
+                    current_mask = None
+
                 points_pyramid = [points]
                 for _ in range(3):
                     points = avg_pool_3d(points[None])[0]
@@ -63,7 +76,16 @@ def get_surface_sliding(sdf, resolution=512, grid_boundary=[-0.5, 0.5], return_m
                     pts = pts.reshape(3, -1).permute(1, 0).contiguous()
 
                     if mask is None:
-                        pts_sdf = evaluate(pts)
+                        # only evaluate
+                        if coarse_mask is not None:
+                            pts_sdf = torch.ones_like(pts[:, 1])
+                            valid_mask = (
+                                torch.nn.functional.grid_sample(coarse_mask, pts[None, None, None])[0, 0, 0, 0] > 0
+                            )
+                            if valid_mask.any():
+                                pts_sdf[valid_mask] = evaluate(pts[valid_mask].contiguous())
+                        else:
+                            pts_sdf = evaluate(pts)
                     else:
                         mask = mask.reshape(-1)
                         pts_to_eval = pts[mask]
@@ -87,6 +109,12 @@ def get_surface_sliding(sdf, resolution=512, grid_boundary=[-0.5, 0.5], return_m
 
                 z = pts_sdf.detach().cpu().numpy()
 
+                # skip if no surface found
+                if current_mask is not None:
+                    valid_z = z.reshape(cropN, cropN, cropN)[current_mask]
+                    if valid_z.shape[0] <= 0 or (np.min(valid_z) > level or np.max(valid_z) < level):
+                        continue
+
                 if not (np.min(z) > level or np.max(z) < level):
                     z = z.astype(np.float32)
                     verts, faces, normals, _ = measure.marching_cubes(
@@ -97,6 +125,7 @@ def get_surface_sliding(sdf, resolution=512, grid_boundary=[-0.5, 0.5], return_m
                             (y_max - y_min) / (cropN - 1),
                             (z_max - z_min) / (cropN - 1),
                         ),
+                        mask=current_mask,
                     )
                     print(np.array([x_min, y_min, z_min]))
                     print(verts.min(), verts.max())
@@ -112,7 +141,16 @@ def get_surface_sliding(sdf, resolution=512, grid_boundary=[-0.5, 0.5], return_m
     if return_mesh:
         return combined
     else:
-        combined.export("test.ply")
+        filename = "test.ply"
+        filename_simplify = "test-simplify.ply"
+
+        combined.export(filename)
+        ms = pymeshlab.MeshSet()
+        ms.load_new_mesh(filename)
+
+        print("simply mesh")
+        ms.meshing_decimation_quadric_edge_collapse(targetfacenum=2000000)
+        ms.save_current_mesh(filename_simplify, save_face_color=False)
 
 
 @torch.no_grad()
