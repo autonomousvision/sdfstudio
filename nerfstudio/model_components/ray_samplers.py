@@ -1091,16 +1091,6 @@ class UniSurfSampler(Sampler):
             ray_bundle, ray_samples_interval, ray_samples_uniform_importance
         )
 
-        # TODO model background?
-        # save_points("p1.ply", ray_samples_interval.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
-        # save_points(
-        #    "p2.ply", ray_samples_uniform_outside.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3)
-        # )
-        # save_points("p3.ply", ray_samples.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
-        # save_points("p4.ply", importance_samples.frustums.get_positions().detach().cpu().numpy().reshape(-1, 3))
-        # if self._step > 0:
-        #    exit(-1)
-
         if return_surface_points:
             return ray_samples, surface_points
 
@@ -1402,10 +1392,10 @@ class NeuSAccSampler(Sampler):
         if step >= self.steps_warpup and step % self.steps_per_grid_update == 0:
 
             mask = self._binary.reshape(-1)
-            # voxels can't be recovered once it is pruned
+            # TODO voxels can't be recovered once it is pruned
             occupied_voxel = self.cube_coordinate[mask.reshape(-1)]
 
-            save_points("occupied_voxel.ply", occupied_voxel.cpu().numpy())
+            # save_points("occupied_voxel.ply", occupied_voxel.cpu().numpy())
 
             def evaluate(points):
                 z = []
@@ -1438,8 +1428,8 @@ class NeuSAccSampler(Sampler):
             mask[mask.reshape(-1).clone()] = sdf_mask
 
             self._binary = mask.reshape([self.grid_size] * 3).contiguous()
-            print("================================================================", self._binary.float().mean())
-            save_points("voxel_valid.ply", self.cube_coordinate[self._binary.reshape(-1)].cpu().numpy())
+
+            # save_points("voxel_valid.ply", self.cube_coordinate[self._binary.reshape(-1)].cpu().numpy())
 
             # TODO do we need dilation
             # F.max_pool3d(M.float(), kernel_size=3, padding=1, stride=1).bool()
@@ -1501,7 +1491,7 @@ class NeuSAccSampler(Sampler):
         ray_samples = self.create_ray_samples_from_ray_indices(ray_bundle, ray_indices, t_starts, t_ends)
 
         if self.importance_sampling and ray_samples.shape[0] > 0:
-            save_points("first.ply", ray_samples.frustums.get_start_positions().cpu().numpy().reshape(-1, 3))
+            # save_points("first.ply", ray_samples.frustums.get_start_positions().cpu().numpy().reshape(-1, 3))
 
             alphas = alpha_fn(ray_samples)
             weights = nerfacc.render_weight_from_alpha(alphas, ray_indices=ray_indices, n_rays=ray_bundle.shape[0])
@@ -1512,6 +1502,6 @@ class NeuSAccSampler(Sampler):
             ray_indices = nerfacc.unpack_info(packed_info, t_starts.shape[0])
             ray_samples = self.create_ray_samples_from_ray_indices(ray_bundle, ray_indices, t_starts, t_ends)
 
-            save_points("second.ply", ray_samples.frustums.get_start_positions().cpu().numpy().reshape(-1, 3))
+            # save_points("second.ply", ray_samples.frustums.get_start_positions().cpu().numpy().reshape(-1, 3))
 
         return ray_samples, ray_indices
