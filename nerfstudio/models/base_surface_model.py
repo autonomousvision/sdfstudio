@@ -53,7 +53,11 @@ from nerfstudio.model_components.renderers import (
     RGBRenderer,
     SemanticRenderer,
 )
-from nerfstudio.model_components.scene_colliders import NearFarCollider, SphereCollider
+from nerfstudio.model_components.scene_colliders import (
+    AABBBoxCollider,
+    NearFarCollider,
+    SphereCollider,
+)
 from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.utils import colormaps
 from nerfstudio.utils.colors import get_color
@@ -98,6 +102,8 @@ class SurfaceModelConfig(ModelConfig):
     """Number of samples outside the bounding sphere for backgound"""
     periodic_tvl_mult: float = 0.0
     """Total variational loss mutliplier"""
+    overwrite_near_far_plane: bool = False
+    """whether to use near and far collider from command line"""
 
 
 class SurfaceModel(Model):
@@ -125,12 +131,19 @@ class SurfaceModel(Model):
         )
 
         # Collider
-        self.collider = NearFarCollider(near_plane=self.config.near_plane, far_plane=self.config.far_plane)
+        if self.scene_box.collider_type == "near_far":
+            self.collider = NearFarCollider(near_plane=self.scene_box.near, far_plane=self.scene_box.far)
+        elif self.scene_box.collider_type == "box":
+            self.collider = AABBBoxCollider(self.scene_box, near_plane=self.scene_box.near)
+        elif self.scene_box.collider_type == "sphere":
+            # TODO do we also use near if the ray don't intersect with the sphere
+            self.collider = SphereCollider(radius=1.0, soft_intersection=True)
+        else:
+            raise NotImplementedError
 
-        # TODO use near far, background-far
-        # TODO change to also suppors other collider such as near and far or bbox colider
-        # sphere collider
-        self.sphere_collider = SphereCollider(radius=1.0, soft_intersection=True)
+        # command line near and far has highest priority
+        if self.config.overwrite_near_far_plane:
+            self.collider = NearFarCollider(near_plane=self.config.near_plane, far_plane=self.config.far_plane)
 
         # background model
         if self.config.background_model == "grid":
