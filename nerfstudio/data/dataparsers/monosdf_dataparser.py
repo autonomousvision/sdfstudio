@@ -121,10 +121,10 @@ def get_depths_and_normals(image_idx: int, depths, normals):
 
 
 @dataclass
-class UniSceneDataParserConfig(DataParserConfig):
+class MonoSDFDataParserConfig(DataParserConfig):
     """Scene dataset parser config"""
 
-    _target: Type = field(default_factory=lambda: UniScene)
+    _target: Type = field(default_factory=lambda: MonoSDFScene)
     """target class to instantiate"""
     data: Path = Path("data/DTU/scan65")
     """Directory specifying location of data."""
@@ -149,10 +149,10 @@ class UniSceneDataParserConfig(DataParserConfig):
 
 
 @dataclass
-class UniScene(DataParser):
+class MonoSDFScene(DataParser):
     """UniScene Dataset"""
 
-    config: UniSceneDataParserConfig
+    config: MonoSDFDataParserConfig
 
     def _generate_dataparser_outputs(self, split="train"):  # pylint: disable=unused-argument,too-many-statements
         def glob_data(data_dir):

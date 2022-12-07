@@ -38,7 +38,7 @@ from nerfstudio.data.dataparsers.blender_dataparser import BlenderDataParserConf
 from nerfstudio.data.dataparsers.dnerf_dataparser import DNeRFDataParserConfig
 from nerfstudio.data.dataparsers.friends_dataparser import FriendsDataParserConfig
 from nerfstudio.data.dataparsers.nerfstudio_dataparser import NerfstudioDataParserConfig
-from nerfstudio.data.dataparsers.uniscene_dataparser import UniSceneDataParserConfig
+from nerfstudio.data.dataparsers.sdfstudio_dataparser import SDFStudioDataParserConfig
 from nerfstudio.engine.optimizers import AdamOptimizerConfig, RAdamOptimizerConfig
 from nerfstudio.engine.schedulers import (
     ExponentialSchedulerConfig,
@@ -101,7 +101,7 @@ method_configs["neus-facto"] = Config(
     ),
     pipeline=VanillaPipelineConfig(
         datamanager=VanillaDataManagerConfig(
-            dataparser=UniSceneDataParserConfig(),
+            dataparser=SDFStudioDataParserConfig(),
             train_num_rays_per_batch=2048,
             eval_num_rays_per_batch=1024,
             camera_optimizer=CameraOptimizerConfig(
@@ -140,7 +140,7 @@ method_configs["geo-volsdf"] = Config(
     ),
     pipeline=FlexibleInputPipelineConfig(
         datamanager=FlexibleDataManagerConfig(
-            dataparser=UniSceneDataParserConfig(),
+            dataparser=SDFStudioDataParserConfig(),
             train_num_rays_per_batch=1024,
             eval_num_rays_per_batch=1024,
             camera_optimizer=CameraOptimizerConfig(
@@ -177,7 +177,7 @@ method_configs["monosdf"] = Config(
     ),
     pipeline=VanillaPipelineConfig(
         datamanager=VanillaDataManagerConfig(
-            dataparser=UniSceneDataParserConfig(),
+            dataparser=SDFStudioDataParserConfig(),
             train_num_rays_per_batch=1024,
             eval_num_rays_per_batch=1024,
             camera_optimizer=CameraOptimizerConfig(
@@ -212,7 +212,7 @@ method_configs["volsdf"] = Config(
     ),
     pipeline=VanillaPipelineConfig(
         datamanager=VanillaDataManagerConfig(
-            dataparser=UniSceneDataParserConfig(),
+            dataparser=SDFStudioDataParserConfig(),
             train_num_rays_per_batch=1024,
             eval_num_rays_per_batch=1024,
             camera_optimizer=CameraOptimizerConfig(
@@ -247,7 +247,7 @@ method_configs["geo-neus"] = Config(
     ),
     pipeline=FlexibleInputPipelineConfig(
         datamanager=FlexibleDataManagerConfig(
-            dataparser=UniSceneDataParserConfig(),
+            dataparser=SDFStudioDataParserConfig(),
             train_num_rays_per_batch=1024,
             eval_num_rays_per_batch=1024,
             camera_optimizer=CameraOptimizerConfig(
@@ -282,7 +282,7 @@ method_configs["mono-neus"] = Config(
     ),
     pipeline=VanillaPipelineConfig(
         datamanager=VanillaDataManagerConfig(
-            dataparser=UniSceneDataParserConfig(),
+            dataparser=SDFStudioDataParserConfig(),
             train_num_rays_per_batch=1024,
             eval_num_rays_per_batch=1024,
             camera_optimizer=CameraOptimizerConfig(
@@ -317,7 +317,7 @@ method_configs["neus"] = Config(
     ),
     pipeline=VanillaPipelineConfig(
         datamanager=VanillaDataManagerConfig(
-            dataparser=UniSceneDataParserConfig(),
+            dataparser=SDFStudioDataParserConfig(),
             train_num_rays_per_batch=1024,
             eval_num_rays_per_batch=1024,
             camera_optimizer=CameraOptimizerConfig(
@@ -352,7 +352,7 @@ method_configs["unisurf"] = Config(
     ),
     pipeline=VanillaPipelineConfig(
         datamanager=VanillaDataManagerConfig(
-            dataparser=UniSceneDataParserConfig(),
+            dataparser=SDFStudioDataParserConfig(),
             train_num_rays_per_batch=1024,
             eval_num_rays_per_batch=1024,
             camera_optimizer=CameraOptimizerConfig(
@@ -387,7 +387,7 @@ method_configs["mono-unisurf"] = Config(
     ),
     pipeline=VanillaPipelineConfig(
         datamanager=VanillaDataManagerConfig(
-            dataparser=UniSceneDataParserConfig(),
+            dataparser=SDFStudioDataParserConfig(),
             train_num_rays_per_batch=1024,
             eval_num_rays_per_batch=1024,
             camera_optimizer=CameraOptimizerConfig(
@@ -422,7 +422,7 @@ method_configs["geo-unisurf"] = Config(
     ),
     pipeline=FlexibleInputPipelineConfig(
         datamanager=FlexibleDataManagerConfig(
-            dataparser=UniSceneDataParserConfig(),
+            dataparser=SDFStudioDataParserConfig(),
             train_num_rays_per_batch=1024,
             eval_num_rays_per_batch=1024,
             camera_optimizer=CameraOptimizerConfig(
@@ -457,7 +457,7 @@ method_configs["dto"] = Config(
     ),
     pipeline=VanillaPipelineConfig(
         datamanager=VanillaDataManagerConfig(
-            dataparser=NerfstudioDataParserConfig(),
+            dataparser=SDFStudioDataParserConfig(),
             train_num_rays_per_batch=2048,
             eval_num_rays_per_batch=2048,
             camera_optimizer=CameraOptimizerConfig(
@@ -496,7 +496,7 @@ method_configs["neusW"] = Config(
     ),
     pipeline=VanillaPipelineConfig(
         datamanager=VanillaDataManagerConfig(
-            dataparser=NerfstudioDataParserConfig(),
+            dataparser=SDFStudioDataParserConfig(),
             train_num_rays_per_batch=2048,
             eval_num_rays_per_batch=2048,
             camera_optimizer=CameraOptimizerConfig(
@@ -533,7 +533,7 @@ method_configs["neus-acc"] = Config(
     ),
     pipeline=VanillaPipelineConfig(
         datamanager=VanillaDataManagerConfig(
-            dataparser=UniSceneDataParserConfig(),
+            dataparser=SDFStudioDataParserConfig(),
             train_num_rays_per_batch=2048,
             eval_num_rays_per_batch=1024,
             camera_optimizer=CameraOptimizerConfig(

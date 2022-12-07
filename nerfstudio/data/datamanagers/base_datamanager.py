@@ -47,7 +47,7 @@ from nerfstudio.data.dataparsers.phototourism_dataparser import (
 )
 from nerfstudio.data.dataparsers.record3d_dataparser import Record3DDataParserConfig
 from nerfstudio.data.dataparsers.sdfstudio_dataparser import SDFStudioDataParserConfig
-from nerfstudio.data.dataparsers.uniscene_dataparser import UniSceneDataParserConfig
+from nerfstudio.data.dataparsers.monosdf_dataparser import MonoSDFDataParserConfig
 from nerfstudio.data.datasets.base_dataset import GeneralizedDataset, InputDataset
 from nerfstudio.data.pixel_samplers import PixelSampler
 from nerfstudio.data.utils.dataloaders import (
@@ -72,7 +72,7 @@ AnnotatedDataParserUnion = tyro.conf.OmitSubcommandPrefixes[  # Omit prefixes of
             "nuscenes-data": NuScenesDataParserConfig(),
             "record3d-data": Record3DDataParserConfig(),
             "dnerf-data": DNeRFDataParserConfig(),
-            "uniscene-data": UniSceneDataParserConfig(),
+            "monosdf-data": MonoSDFDataParserConfig(),
             "sdfstudio-data": SDFStudioDataParserConfig(),
             "phototourism-data": PhototourismDataParserConfig(),
         },
