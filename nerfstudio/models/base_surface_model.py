@@ -360,9 +360,9 @@ class SurfaceModel(Model):
                 depth_gt = batch["depth"].to(self.device)[..., None]
                 depth_pred = outputs["depth"]
 
-                mask = torch.ones_like(depth_gt).reshape(1, 32, 32).bool()
+                mask = torch.ones_like(depth_gt).reshape(1, 32, -1).bool()
                 loss_dict["depth_loss"] = (
-                    self.depth_loss(depth_pred.reshape(1, 32, 32), (depth_gt * 50 + 0.5).reshape(1, 32, 32), mask)
+                    self.depth_loss(depth_pred.reshape(1, 32, -1), (depth_gt * 50 + 0.5).reshape(1, 32, -1), mask)
                     * self.config.mono_depth_loss_mult
                 )
 
