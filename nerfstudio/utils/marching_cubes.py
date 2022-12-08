@@ -9,7 +9,16 @@ upsample = torch.nn.Upsample(scale_factor=2, mode="nearest")
 
 
 @torch.no_grad()
-def get_surface_sliding(sdf, resolution=512, grid_boundary=[-0.5, 0.5], return_mesh=False, level=0, coarse_mask=None):
+def get_surface_sliding(
+    sdf,
+    resolution=512,
+    grid_boundary=[-0.5, 0.5],
+    return_mesh=False,
+    level=0,
+    coarse_mask=None,
+    output_path="test.ply",
+    simplify_mesh=True,
+):
     assert resolution % 512 == 0
     if coarse_mask is not None:
         # we need to permute here as pytorch's grid_sample use (z, y, x)
@@ -141,16 +150,17 @@ def get_surface_sliding(sdf, resolution=512, grid_boundary=[-0.5, 0.5], return_m
     if return_mesh:
         return combined
     else:
-        filename = "test.ply"
-        filename_simplify = "test-simplify.ply"
+        filename = str(output_path)
+        filename_simplify = str(output_path).replace(".ply", "-simplify.ply")
 
         combined.export(filename)
-        ms = pymeshlab.MeshSet()
-        ms.load_new_mesh(filename)
+        if simplify_mesh:
+            ms = pymeshlab.MeshSet()
+            ms.load_new_mesh(filename)
 
-        print("simply mesh")
-        ms.meshing_decimation_quadric_edge_collapse(targetfacenum=2000000)
-        ms.save_current_mesh(filename_simplify, save_face_color=False)
+            print("simply mesh")
+            ms.meshing_decimation_quadric_edge_collapse(targetfacenum=2000000)
+            ms.save_current_mesh(filename_simplify, save_face_color=False)
 
 
 @torch.no_grad()
