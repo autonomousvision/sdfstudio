@@ -352,7 +352,7 @@ class Heritage(DataParser):
         #    print("==================================================")
 
         # indices = indices[::20]
-        cameras = cameras[indices]
+        cameras = cameras[torch.tensor(indices)]
         image_filenames = [image_filenames[i] for i in indices]
         masks = [masks[i] for i in indices]
         fg_masks = [fg_masks[i] for i in indices]

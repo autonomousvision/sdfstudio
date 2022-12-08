@@ -28,7 +28,12 @@ from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import torch
-from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc import (
+    RTCConfiguration,
+    RTCIceServer,
+    RTCPeerConnection,
+    RTCSessionDescription,
+)
 from cryptography.utils import CryptographyDeprecationWarning
 from rich.console import Console
 
@@ -310,19 +315,18 @@ class ViewerState:
         image_indices = self._pick_drawn_image_idxs(len(dataset))
         for idx in image_indices:
             image = dataset[idx]["image"]
-            if isinstance(image, BasicImages):
-                bgr = image.images[0][..., [2, 1, 0]]
-            else:
-                bgr = image[..., [2, 1, 0]]
-            camera_json = dataset.dataparser_outputs.cameras.to_json(camera_idx=idx, image=bgr, max_size=100)
+            bgr = image[..., [2, 1, 0]]
+            camera_json = dataset.cameras.to_json(camera_idx=idx, image=bgr, max_size=100)
             self.vis[f"sceneState/cameras/{idx:06d}"].write(camera_json)
 
         # draw the scene box (i.e., the bounding box)
-        json_ = dataset.dataparser_outputs.scene_box.to_json()
+        json_ = dataset.scene_box.to_json()
         self.vis["sceneState/sceneBox"].write(json_)
 
         # set the initial state whether to train or not
         self.vis["renderingState/isTraining"].write(start_train)
+
+        # self.vis["renderingState/render_time"].write(str(0))
 
         # set the properties of the camera
         # self.vis["renderingState/camera"].write(json_)
@@ -371,6 +375,9 @@ class ViewerState:
             step: iteration step of training
             graph: the current checkpoint of the model
         """
+
+        has_temporal_distortion = getattr(graph, "temporal_distortion", None) is not None
+        self.vis["model/has_temporal_distortion"].write(str(has_temporal_distortion).lower())
 
         is_training = self.vis["renderingState/isTraining"].read()
         self.step = step
@@ -507,7 +514,28 @@ class ViewerState:
         # returns the description to for WebRTC to the specific websocket connection
         offer = RTCSessionDescription(data["sdp"], data["type"])
 
-        pc = RTCPeerConnection()
+        if self.config.skip_openrelay:
+            ice_servers = [
+                RTCIceServer(urls="stun:stun.l.google.com:19302"),
+            ]
+        else:
+            ice_servers = [
+                RTCIceServer(urls="stun:stun.l.google.com:19302"),
+                RTCIceServer(urls="stun:openrelay.metered.ca:80"),
+                RTCIceServer(
+                    urls="turn:openrelay.metered.ca:80", username="openrelayproject", credential="openrelayproject"
+                ),
+                RTCIceServer(
+                    urls="turn:openrelay.metered.ca:443", username="openrelayproject", credential="openrelayproject"
+                ),
+                RTCIceServer(
+                    urls="turn:openrelay.metered.ca:443?transport=tcp",
+                    username="openrelayproject",
+                    credential="openrelayproject",
+                ),
+            ]
+
+        pc = RTCPeerConnection(configuration=RTCConfiguration(iceServers=ice_servers))
         self.pcs.add(pc)
 
         video = SingleFrameStreamTrack()
@@ -645,9 +673,12 @@ class ViewerState:
 
         aspect_ratio = camera_object["aspect"]
 
-        image_height = (num_vis_rays / aspect_ratio) ** 0.5
-        image_height = int(round(image_height, -1))
-        image_height = min(self.max_resolution, image_height)
+        if not self.camera_moving and not is_training:
+            image_height = self.max_resolution
+        else:
+            image_height = (num_vis_rays / aspect_ratio) ** 0.5
+            image_height = int(round(image_height, -1))
+            image_height = min(self.max_resolution, image_height)
         image_width = int(image_height * aspect_ratio)
         if image_width > self.max_resolution:
             image_width = self.max_resolution
@@ -678,6 +709,7 @@ class ViewerState:
 
     @profiler.time_function
     def _render_image_in_viewer(self, camera_object, graph: Model, is_training: bool) -> None:
+        # pylint: disable=too-many-statements
         """
         Draw an image using the current camera pose from the viewer.
         The image is sent of a TCP connection and then uses WebRTC to send it to the viewer.
@@ -728,12 +760,17 @@ class ViewerState:
             dim=0,
         )
 
+        times = self.vis["renderingState/render_time"].read()
+        if times is not None:
+            times = torch.tensor([float(times)])
+
         camera = Cameras(
             fx=intrinsics_matrix[0, 0],
             fy=intrinsics_matrix[1, 1],
             cx=intrinsics_matrix[0, 2],
             cy=intrinsics_matrix[1, 2],
             camera_to_worlds=camera_to_world[None, ...],
+            times=times,
         )
         camera = camera.to(graph.device)
 

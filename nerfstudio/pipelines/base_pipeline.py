@@ -229,9 +229,9 @@ class VanillaPipeline(Pipeline):
         assert self.datamanager.train_dataset is not None, "Missing input dataset"
 
         self._model = config.model.setup(
-            scene_box=self.datamanager.train_dataset.dataparser_outputs.scene_box,
+            scene_box=self.datamanager.train_dataset.scene_box,
             num_train_data=len(self.datamanager.train_dataset),
-            metadata=self.datamanager.train_dataset.dataparser_outputs.metadata,
+            metadata=self.datamanager.train_dataset.metadata,
             world_size=world_size,
             local_rank=local_rank,
         )
@@ -350,10 +350,9 @@ class VanillaPipeline(Pipeline):
                 metrics_dict, _ = self.model.get_image_metrics_and_images(outputs, batch)
                 assert "num_rays_per_sec" not in metrics_dict
                 metrics_dict["num_rays_per_sec"] = num_rays / (time() - inner_start)
-                if not isbasicimages:  # If our resolutions are all diff, this doesn't make sense
-                    fps_str = f"fps_at_{height}x{width}"
-                    assert fps_str not in metrics_dict
-                    metrics_dict[fps_str] = metrics_dict["num_rays_per_sec"] / (height * width)
+                fps_str = "fps"
+                assert fps_str not in metrics_dict
+                metrics_dict[fps_str] = metrics_dict["num_rays_per_sec"] / (height * width)
                 metrics_dict_list.append(metrics_dict)
                 progress.advance(task)
         # average the metrics list

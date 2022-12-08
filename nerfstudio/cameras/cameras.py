@@ -38,6 +38,7 @@ class CameraType(Enum):
 
     PERSPECTIVE = auto()
     FISHEYE = auto()
+    EQUIRECTANGULAR = auto()
 
 
 CAMERA_MODEL_TO_TYPE = {
@@ -47,6 +48,7 @@ CAMERA_MODEL_TO_TYPE = {
     "RADIAL": CameraType.PERSPECTIVE,
     "OPENCV": CameraType.PERSPECTIVE,
     "OPENCV_FISHEYE": CameraType.FISHEYE,
+    "EQUIRECTANGULAR": CameraType.EQUIRECTANGULAR,
 }
 
 
@@ -58,17 +60,18 @@ class Cameras(TensorDataclass):
     the focal lengths, principal points, and image sizes as tensors is to allow for batched cameras
     down the line in cases where your batches of camera data don't come from the same cameras.
 
+     If a single value is provided, it is broadcasted to all cameras.
+
     Args:
         camera_to_worlds: Camera to world matrices. Tensor of per-image c2w matrices, in [R | t] format
-        fx: Focal length x. If a single value is provided, it is broadcasted to all cameras.
-        fy: Focal length y. If a single value is provided, it is broadcasted to all cameras.
-        cx: Principal point x. If a single value is provided, it is broadcasted to all cameras.
-        cy: Principal point y. If a single value is provided, it is broadcasted to all cameras.
-        width: Image width. If a single value is provided, it is broadcasted to all cameras.
-        height: Image height. If a single value is provided, it is broadcasted to all cameras.
-        distortion_params: OpenCV 6 radial distortion coefficients.
-        camera_type: Type of camera model. If a single value is provided, it is broadcasted to
-            all cameras. This will be an int corresponding to the CameraType enum.
+        fx: Focal length x
+        fy: Focal length y
+        cx: Principal point x
+        cy: Principal point y
+        width: Image width
+        height: Image height
+        distortion_params: OpenCV 6 radial distortion coefficients
+        camera_type: Type of camera model. This will be an int corresponding to the CameraType enum.
         times: Timestamps for each camera
     """
 
@@ -113,21 +116,6 @@ class Cameras(TensorDataclass):
         input types in the function signature and it won't break. Your batch size for all tensors
         must be broadcastable to the same size, and the resulting number of batch dimensions will be
         the batch dimension with the largest number of dimensions.
-
-
-        Args:
-            camera_to_worlds: Camera to world matrices. Tensor of per-image c2w matrices, in [R | t] format,
-                optionally flattened
-            fx: Focal length x. If a single value is provided, it is broadcasted to all cameras.
-            fy: Focal length y. If a single value is provided, it is broadcasted to all cameras.
-            cx: Principal point x. If a single value is provided, it is broadcasted to all cameras.
-            cy: Principal point y. If a single value is provided, it is broadcasted to all cameras.
-            width: Image width. If a single value is provided, it is broadcasted to all cameras.
-            height: Image height. If a single value is provided, it is broadcasted to all cameras.
-            distortion_params: OpenCV 6 radial distortion coefficients.
-            camera_type: Type of camera model. If a single value is provided, it is broadcasted to
-                all cameras. This will be an int corresponding to the CameraType enum.
-            times: Timestamps for each camera
         """
 
         # This will notify the tensordataclass that we have a field with more than 1 dimension
@@ -256,7 +244,7 @@ class Cameras(TensorDataclass):
             if times.ndim == 0 or times.shape[-1] != 1:
                 times = times.unsqueeze(-1).to(self.device)
         else:
-            raise ValueError(f"times must be a tensor, got {type(times)}")
+            raise ValueError(f"times must be None or a tensor, got {type(times)}")
 
         return times
 
@@ -313,22 +301,23 @@ class Cameras(TensorDataclass):
             image_coords = torch.stack(image_coords, dim=-1) + pixel_offset  # stored as (y, x) coordinates
         return image_coords
 
-    def generate_rays(
+    def generate_rays(  # pylint: disable=too-many-statements
         self,
-        camera_indices: Union[TensorType["num_rays":..., "cameras_ndim"], int],
+        camera_indices: Union[TensorType["num_rays":..., "num_cameras_batch_dims"], int],
         coords: Optional[TensorType["num_rays":..., 2]] = None,
         camera_opt_to_camera: Optional[TensorType["num_rays":..., 3, 4]] = None,
         distortion_params_delta: Optional[TensorType["num_rays":..., 6]] = None,
         keep_shape: Optional[bool] = None,
+        disable_distortion: bool = False,
     ) -> RayBundle:
         """Generates rays for the given camera indices.
 
         This function will standardize the input arguments and then call the _generate_rays_from_coords function
         to generate the rays. Our goal is to parse the arguments and then get them into the right shape:
-            - camera_indices: (num_rays:..., cameras_ndim)
-            - coords: (num_rays, 2)
-            - camera_opt_to_camera: (num_rays, 3, 4) or None
-            - distortion_params_delta: (num_rays, 6) or None
+            - camera_indices: (num_rays:..., num_cameras_batch_dims)
+            - coords: (num_rays:..., 2)
+            - camera_opt_to_camera: (num_rays:..., 3, 4) or None
+            - distortion_params_delta: (num_rays:..., 6) or None
 
         Read the docstring for _generate_rays_from_coords for more information on how we generate the rays
         after we have standardized the arguments.
@@ -361,6 +350,7 @@ class Cameras(TensorDataclass):
             keep_shape: If None, then we default to the regular behavior of flattening if cameras is jagged, otherwise
                 keeping dimensions. If False, we flatten at the end. If True, then we keep the shape of the
                 camera_indices and coords tensors (if we can).
+            disable_distortion: If True, disables distortion.
 
         Returns:
             Rays for the given camera indices and coords.
@@ -395,7 +385,7 @@ class Cameras(TensorDataclass):
 
         assert camera_indices.shape[-1] == len(
             cameras.shape
-        ), "camera_indices must have shape (num_rays:..., cameras_ndim)"
+        ), "camera_indices must have shape (num_rays:..., num_cameras_batch_dims)"
 
         # If keep_shape is True, then we need to make sure that the camera indices in question
         # are all the same height and width and can actually be batched while maintaining the image
@@ -453,7 +443,7 @@ class Cameras(TensorDataclass):
         # raybundle.shape == (num_rays) when done
         # pylint: disable=protected-access
         raybundle = cameras._generate_rays_from_coords(
-            camera_indices, coords, camera_opt_to_camera, distortion_params_delta
+            camera_indices, coords, camera_opt_to_camera, distortion_params_delta, disable_distortion=disable_distortion
         )
 
         # If we have mandated that we don't keep the shape, then we flatten
@@ -468,16 +458,20 @@ class Cameras(TensorDataclass):
     # pylint: disable=too-many-statements
     def _generate_rays_from_coords(
         self,
-        camera_indices: TensorType["num_rays":..., "cameras_ndim"],
+        camera_indices: TensorType["num_rays":..., "num_cameras_batch_dims"],
         coords: TensorType["num_rays":..., 2],
         camera_opt_to_camera: Optional[TensorType["num_rays":..., 3, 4]] = None,
         distortion_params_delta: Optional[TensorType["num_rays":..., 6]] = None,
+        disable_distortion: bool = False,
     ) -> RayBundle:
         """Generates rays for the given camera indices and coords where self isn't jagged
+
         This is a fairly complex function, so let's break this down slowly.
+
         Shapes involved:
             - num_rays: This is your output raybundle shape. It dictates the number and shape of the rays generated
-            - cameras_ndim: This is the number of dimensions of our camera
+            - num_cameras_batch_dims: This is the number of dimensions of our camera
+
         Args:
             camera_indices: Camera indices of the flattened cameras object to generate rays for.
                 The shape of this is such that indexing into camera_indices["num_rays":...] will return the
@@ -510,21 +504,29 @@ class Cameras(TensorDataclass):
                         # since we added an extra dimension in front of camera_indices
                     >>> out_rays.shape
                         (1,)
+
                 If you want more examples, check tests/cameras/test_cameras and the function check_generate_rays_shape
-                The bottom line is that for camera_indices: (num_rays:..., cameras_ndim), num_rays is the output
-                shape and if you index into the output RayBundle with some indices [i:...], if you index into
+
+                The bottom line is that for camera_indices: (num_rays:..., num_cameras_batch_dims), num_rays is the
+                output shape and if you index into the output RayBundle with some indices [i:...], if you index into
                 camera_indices with camera_indices[i:...] as well, you will get a 1D tensor containing the batch
                 indices into the original cameras object corresponding to that ray (ie: you will get the camera
                 from our batched cameras corresponding to the ray at RayBundle[i:...]).
+
             coords: Coordinates of the pixels to generate rays for. If None, the full image will be rendered, meaning
                 height and width get prepended to the num_rays dimensions. Indexing into coords with [i:...] will
                 get you the image coordinates [x, y] of that specific ray located at output RayBundle[i:...].
+
             camera_opt_to_camera: Optional transform for the camera to world matrices.
                 In terms of shape, it follows the same rules as coords, but indexing into it with [i:...] gets you
                 the 2D camera to world transform matrix for the camera optimization at RayBundle[i:...].
+
             distortion_params_delta: Optional delta for the distortion parameters.
                 In terms of shape, it follows the same rules as coords, but indexing into it with [i:...] gets you
                 the 1D tensor with the 6 distortion parameters for the camera optimization at RayBundle[i:...].
+
+            disable_distortion: If True, disables distortion.
+
         Returns:
             Rays for the given camera indices and coords. RayBundle.shape == num_rays
         """
@@ -540,8 +542,8 @@ class Cameras(TensorDataclass):
         assert camera_opt_to_camera is None or camera_opt_to_camera.shape == num_rays_shape + (3, 4)
         assert distortion_params_delta is None or distortion_params_delta.shape == num_rays_shape + (6,)
 
-        # Here, we've broken our indices down along the cameras_ndim dimension allowing us to index by all of our output
-        # rays at each dimension of our cameras object
+        # Here, we've broken our indices down along the num_cameras_batch_dims dimension allowing us to index by all
+        # of our output rays at each dimension of our cameras object
         true_indices = [camera_indices[..., i] for i in range(camera_indices.shape[-1])]
 
         # Get all our focal lengths, principal points and make sure they are the right shapes
@@ -582,16 +584,24 @@ class Cameras(TensorDataclass):
         assert coord_stack.shape == (3,) + num_rays_shape + (2,)
 
         # Undistorts our images according to our distortion parameters
-        distortion_params = None
-        if self.distortion_params is not None:
-            distortion_params = self.distortion_params[true_indices]
-            if distortion_params_delta is not None:
-                distortion_params = distortion_params + distortion_params_delta
-        elif distortion_params_delta is not None:
-            distortion_params = distortion_params_delta
+        if not disable_distortion:
+            distortion_params = None
+            if self.distortion_params is not None:
+                distortion_params = self.distortion_params[true_indices]
+                if distortion_params_delta is not None:
+                    distortion_params = distortion_params + distortion_params_delta
+            elif distortion_params_delta is not None:
+                distortion_params = distortion_params_delta
 
-        if distortion_params is not None:
-            coord_stack = camera_utils.radial_and_tangential_undistort(coord_stack, distortion_params)
+            # Do not apply distortion for equirectangular images
+            if distortion_params is not None:
+                mask = (self.camera_type[true_indices] != CameraType.EQUIRECTANGULAR.value).squeeze(-1)  # (num_rays)
+                coord_mask = torch.stack([mask, mask, mask], dim=0)
+                if mask.any():
+                    coord_stack[coord_mask, :] = camera_utils.radial_and_tangential_undistort(
+                        coord_stack[coord_mask, :].reshape(3, -1, 2),
+                        distortion_params[mask, :],
+                    ).reshape(-1, 2)
 
         # Make sure after we have undistorted our images, the shapes are still correct
         assert coord_stack.shape == (3,) + num_rays_shape + (2,)
@@ -623,8 +633,21 @@ class Cameras(TensorDataclass):
             directions_stack[..., 1][mask] = torch.masked_select(coord_stack[..., 1] * sin_theta / theta, mask).float()
             directions_stack[..., 2][mask] = -torch.masked_select(torch.cos(theta), mask)
 
+        if CameraType.EQUIRECTANGULAR.value in cam_types:
+            mask = (self.camera_type[true_indices] == CameraType.EQUIRECTANGULAR.value).squeeze(-1)  # (num_rays)
+            mask = torch.stack([mask, mask, mask], dim=0)
+
+            # For equirect, fx = fy = height = width/2
+            # Then coord[..., 0] goes from -1 to 1 and coord[..., 1] goes from -1/2 to 1/2
+            theta = -torch.pi * coord_stack[..., 0]  # minus sign for right-handed
+            phi = torch.pi * (0.5 - coord_stack[..., 1])
+            # use spherical in local camera coordinates (+y up, x=0 and z<0 is theta=0)
+            directions_stack[..., 0][mask] = torch.masked_select(-torch.sin(theta) * torch.sin(phi), mask).float()
+            directions_stack[..., 1][mask] = torch.masked_select(torch.cos(phi), mask).float()
+            directions_stack[..., 2][mask] = torch.masked_select(-torch.cos(theta) * torch.sin(phi), mask).float()
+
         for value in cam_types:
-            if value not in [CameraType.PERSPECTIVE.value, CameraType.FISHEYE.value]:
+            if value not in [CameraType.PERSPECTIVE.value, CameraType.FISHEYE.value, CameraType.EQUIRECTANGULAR.value]:
                 raise ValueError(f"Camera type {value} not supported.")
 
         assert directions_stack.shape == (3,) + num_rays_shape + (3,)
@@ -661,12 +684,15 @@ class Cameras(TensorDataclass):
         pixel_area = (dx * dy)[..., None]  # ("num_rays":..., 1)
         assert pixel_area.shape == num_rays_shape + (1,)
 
+        times = self.times[camera_indices, 0] if self.times is not None else None
+
         return RayBundle(
             origins=origins,
             directions=directions,
             pixel_area=pixel_area,
             camera_indices=camera_indices,
             directions_norm=directions_norm,
+            times=times,
         )
 
     def to_json(
@@ -691,7 +717,7 @@ class Cameras(TensorDataclass):
             "fy": flattened[camera_idx].fy.item(),
             "camera_to_world": self.camera_to_worlds[camera_idx].tolist(),
             "camera_index": camera_idx,
-            "times": self.times[camera_idx].item() if self.times is not None else None,
+            "times": flattened[camera_idx].times.item() if self.times is not None else None,
         }
         if image is not None:
             image_uint8 = (image * 255).detach().type(torch.uint8)
@@ -741,34 +767,5 @@ class Cameras(TensorDataclass):
         self.fy = self.fy * scaling_factor
         self.cx = self.cx * scaling_factor
         self.cy = self.cy * scaling_factor
-        self.image_height = (self.image_height * scaling_factor).to(torch.int64)
-        self.image_width = (self.image_width * scaling_factor).to(torch.int64)
-
-    def __getitem__(self, indices):
-        if isinstance(indices, torch.Tensor):
-            return Cameras(
-                self.camera_to_worlds[indices],
-                self.fx[indices],
-                self.fy[indices],
-                self.cx[indices],
-                self.cy[indices],
-                height=self.image_height[indices],
-                width=self.image_width[indices],
-                distortion_params=self.distortion_params[indices] if self.distortion_params is not None else None,
-                camera_type=self.camera_type[indices],
-                times=self.times[indices] if self.times is not None else None,
-            )
-        if isinstance(indices, (int, slice)):
-            indices = (indices,)
-        return Cameras(
-            self.camera_to_worlds[indices],
-            self.fx[indices],
-            self.fy[indices],
-            self.cx[indices],
-            self.cy[indices],
-            height=self.image_height[indices],
-            width=self.image_width[indices],
-            distortion_params=self.distortion_params[indices] if self.distortion_params else None,
-            camera_type=self.camera_type[indices],
-            times=self.times[indices] if self.times is not None else None,
-        )
+        self.height = (self.height * scaling_factor).to(torch.int64)
+        self.width = (self.width * scaling_factor).to(torch.int64)

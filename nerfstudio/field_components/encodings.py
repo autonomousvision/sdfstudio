@@ -236,6 +236,7 @@ class HashEncoding(Encoding):
         features_per_level: Number of features per level.
         hash_init_scale: Value to initialize hash grid.
         implementation: Implementation of hash encoding. Fallback to torch if tcnn not available.
+        interpolation: Interpolation override for tcnn hashgrid. Not supported for torch unless linear.
     """
 
     def __init__(
@@ -247,6 +248,7 @@ class HashEncoding(Encoding):
         features_per_level: int = 2,
         hash_init_scale: float = 0.001,
         implementation: Literal["tcnn", "torch"] = "tcnn",
+        interpolation: Optional[Literal["Nearest", "Linear", "Smoothstep"]] = None,
     ) -> None:
 
         super().__init__(in_dim=3)
@@ -268,17 +270,26 @@ class HashEncoding(Encoding):
         if not TCNN_EXISTS and implementation == "tcnn":
             print_tcnn_speed_warning("HashEncoding")
         elif implementation == "tcnn":
+            encoding_config = {
+                "otype": "HashGrid",
+                "n_levels": self.num_levels,
+                "n_features_per_level": self.features_per_level,
+                "log2_hashmap_size": self.log2_hashmap_size,
+                "base_resolution": min_res,
+                "per_level_scale": growth_factor,
+            }
+            if interpolation is not None:
+                encoding_config["interpolation"] = interpolation
+
             self.tcnn_encoding = tcnn.Encoding(
                 n_input_dims=3,
-                encoding_config={
-                    "otype": "HashGrid",
-                    "n_levels": self.num_levels,
-                    "n_features_per_level": self.features_per_level,
-                    "log2_hashmap_size": self.log2_hashmap_size,
-                    "base_resolution": min_res,
-                    "per_level_scale": growth_factor,
-                },
+                encoding_config=encoding_config,
             )
+
+        if not TCNN_EXISTS or self.tcnn_encoding is None:
+            assert (
+                interpolation is None or interpolation == "Linear"
+            ), f"interpolation '{interpolation}' is not supported for torch encoding backend"
 
     def get_out_dim(self) -> int:
         return self.num_levels * self.features_per_level
@@ -491,6 +502,13 @@ class TensorVMEncoding(Encoding):
             return f_02
 
     def forward(self, in_tensor: TensorType["bs":..., "input_dim"]) -> TensorType["bs":..., "output_dim"]:
+        """Compute encoding for each position in in_positions
+
+        Args:
+            in_tensor: position inside bounds in range [-1,1],
+
+        Returns: Encoded position
+        """
         plane_coord = torch.stack([in_tensor[..., [0, 1]], in_tensor[..., [0, 2]], in_tensor[..., [1, 2]]])  # [3,...,2]
         line_coord = torch.stack([in_tensor[..., 2], in_tensor[..., 1], in_tensor[..., 0]])  # [3, ...]
         line_coord = torch.stack([line_coord, torch.zeros_like(line_coord)], dim=-1)  # [3, ...., 2]

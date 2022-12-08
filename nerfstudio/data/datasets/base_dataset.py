@@ -17,6 +17,7 @@ Dataset.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Dict
 
 import numpy as np
@@ -37,16 +38,22 @@ class InputDataset(Dataset):
 
     Args:
         dataparser_outputs: description of where and how to read input images.
+        scale_factor: The scaling factor for the dataparser outputs
     """
 
-    def __init__(self, dataparser_outputs: DataparserOutputs):
+    def __init__(self, dataparser_outputs: DataparserOutputs, scale_factor: float = 1.0):
         super().__init__()
-        self.dataparser_outputs = dataparser_outputs
-        self.has_masks = self.dataparser_outputs.mask_filenames is not None
+        self._dataparser_outputs = dataparser_outputs
+        self.has_masks = dataparser_outputs.mask_filenames is not None
+        self.scale_factor = scale_factor
+        self.scene_box = deepcopy(dataparser_outputs.scene_box)
+        self.metadata = deepcopy(dataparser_outputs.metadata)
+        self.cameras = deepcopy(dataparser_outputs.cameras)
+        self.cameras.rescale_output_resolution(scaling_factor=scale_factor)
         self.image_cache = {}
 
     def __len__(self):
-        return len(self.dataparser_outputs.image_filenames)
+        return len(self._dataparser_outputs.image_filenames)
 
     def get_numpy_image(self, image_idx: int) -> npt.NDArray[np.uint8]:
         """Returns the image of shape (H, W, 3 or 4).
@@ -54,8 +61,12 @@ class InputDataset(Dataset):
         Args:
             image_idx: The image index in the dataset.
         """
-        image_filename = self.dataparser_outputs.image_filenames[image_idx]
+        image_filename = self._dataparser_outputs.image_filenames[image_idx]
         pil_image = Image.open(image_filename)
+        if self.scale_factor != 1.0:
+            width, height = pil_image.size
+            newsize = (int(width * self.scale_factor), int(height * self.scale_factor))
+            pil_image = pil_image.resize(newsize, resample=Image.BILINEAR)
         image = np.array(pil_image, dtype="uint8")  # shape is (h, w, 3 or 4)
         # mask_filename = str(image_filename).replace("dense/images", "masks").replace(".jpg", ".npy")
         # mask = np.load(mask_filename)
@@ -73,9 +84,9 @@ class InputDataset(Dataset):
             image_idx: The image index in the dataset.
         """
         image = torch.from_numpy(self.get_numpy_image(image_idx).astype("float32") / 255.0)
-        if self.dataparser_outputs.alpha_color is not None and image.shape[-1] == 4:
+        if self._dataparser_outputs.alpha_color is not None and image.shape[-1] == 4:
             assert image.shape[-1] == 4
-            image = image[:, :, :3] * image[:, :, -1:] + self.dataparser_outputs.alpha_color * (1.0 - image[:, :, -1:])
+            image = image[:, :, :3] * image[:, :, -1:] + self._dataparser_outputs.alpha_color * (1.0 - image[:, :, -1:])
         else:
             image = image[:, :, :3]
         return image
@@ -94,14 +105,14 @@ class InputDataset(Dataset):
 
         data = {"image_idx": image_idx}
         data["image"] = image
-        for _, data_func_dict in self.dataparser_outputs.additional_inputs.items():
+        for _, data_func_dict in self._dataparser_outputs.additional_inputs.items():
             assert "func" in data_func_dict, "Missing function to process data: specify `func` in `additional_inputs`"
             func = data_func_dict["func"]
             assert "kwargs" in data_func_dict, "No data to process: specify `kwargs` in `additional_inputs`"
             data.update(func(image_idx, **data_func_dict["kwargs"]))
         if self.has_masks:
-            mask_filepath = self.dataparser_outputs.mask_filenames[image_idx]
-            data["mask"] = get_image_mask_tensor_from_path(filepath=mask_filepath)
+            mask_filepath = self._dataparser_outputs.mask_filenames[image_idx]
+            data["mask"] = get_image_mask_tensor_from_path(filepath=mask_filepath, scale_factor=self.scale_factor)
         metadata = self.get_metadata(data)
         data.update(metadata)
         return data
@@ -133,14 +144,14 @@ class GeneralizedDataset(InputDataset):
         dataparser_outputs: description of where and how to read input images.
     """
 
-    def __init__(self, dataparser_outputs: DataparserOutputs):
-        super().__init__(dataparser_outputs)
+    def __init__(self, dataparser_outputs: DataparserOutputs, scale_factor: float = 1.0):
+        super().__init__(dataparser_outputs, scale_factor)
 
         h = None
         w = None
         all_hw_same = True
         for filename in track(
-            self.dataparser_outputs.image_filenames, transient=True, description="Checking image sizes"
+            self._dataparser_outputs.image_filenames, transient=True, description="Checking image sizes"
         ):
             image = Image.open(filename)
             if h is None:
@@ -167,13 +178,13 @@ class GeneralizedDataset(InputDataset):
         image = self.get_image(image_idx)
         data = {"image_idx": image_idx}
         data["image"] = BasicImages([image])
-        for _, data_func_dict in self.dataparser_outputs.additional_inputs.items():
+        for _, data_func_dict in self._dataparser_outputs.additional_inputs.items():
             assert "func" in data_func_dict, "Missing function to process data: specify `func` in `additional_inputs`"
             func = data_func_dict["func"]
             assert "kwargs" in data_func_dict, "No data to process: specify `kwargs` in `additional_inputs`"
             data.update(func(image_idx, **data_func_dict["kwargs"]))
         if self.has_masks:
-            mask_filepath = self.dataparser_outputs.mask_filenames[image_idx]
+            mask_filepath = self._dataparser_outputs.mask_filenames[image_idx]
             data["mask"] = BasicImages([get_image_mask_tensor_from_path(filepath=mask_filepath)])
         metadata = self.get_metadata(data)
         data.update(metadata)
