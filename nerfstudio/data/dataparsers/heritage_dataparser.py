@@ -69,10 +69,10 @@ def get_masks(image_idx: int, masks, fg_masks, sparse_pts):
 
 
 @dataclass
-class PhototourismDataParserConfig(DataParserConfig):
+class HeritageDataParserConfig(DataParserConfig):
     """Phototourism dataset parser config"""
 
-    _target: Type = field(default_factory=lambda: Phototourism)
+    _target: Type = field(default_factory=lambda: Heritage)
     """target class to instantiate"""
     data: Path = Path("data/phototourism/trevi-fountain")
     """Directory specifying location of data."""
@@ -93,14 +93,14 @@ class PhototourismDataParserConfig(DataParserConfig):
 
 
 @dataclass
-class Phototourism(DataParser):
+class Heritage(DataParser):
     """Phototourism dataset. This is based on https://github.com/kwea123/nerf_pl/blob/nerfw/datasets/phototourism.py
     and uses colmap's utils file to read the poses.
     """
 
-    config: PhototourismDataParserConfig
+    config: HeritageDataParserConfig
 
-    def __init__(self, config: PhototourismDataParserConfig):
+    def __init__(self, config: HeritageDataParserConfig):
         super().__init__(config=config)
         self.data: Path = config.data
         self.scale_factor: float = config.scale_factor
