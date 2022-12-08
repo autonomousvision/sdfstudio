@@ -608,7 +608,7 @@ method_configs["neus-acc"] = Config(
 method_configs["nerfacto"] = Config(
     method_name="nerfacto",
     trainer=TrainerConfig(
-        steps_per_eval_batch=5000, steps_per_save=20000, max_num_iterations=300000, mixed_precision=True
+        steps_per_eval_batch=5000, steps_per_save=2000, max_num_iterations=30000, mixed_precision=True
     ),
     pipeline=VanillaPipelineConfig(
         datamanager=VanillaDataManagerConfig(

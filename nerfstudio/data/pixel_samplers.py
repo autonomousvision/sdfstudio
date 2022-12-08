@@ -105,7 +105,8 @@ def collate_image_dataset_batch_list(batch: Dict, num_rays_per_batch: int, keep_
             indices = torch.cat([torch.full((num_rays_in_batch, 1), i, device=device), indices], dim=-1)
             all_indices.append(indices)
             all_images.append(batch["image"][i][indices[:, 1], indices[:, 2]])
-            all_fg_masks.append(batch["fg_mask"][i][indices[:, 1], indices[:, 2]])
+            if "fg_mask" in batch:
+                all_fg_masks.append(batch["fg_mask"][i][indices[:, 1], indices[:, 2]])
 
     else:
         num_rays_in_batch = num_rays_per_batch // num_images
@@ -120,7 +121,8 @@ def collate_image_dataset_batch_list(batch: Dict, num_rays_per_batch: int, keep_
             indices[:, 0] = i
             all_indices.append(indices)
             all_images.append(batch["image"][i][indices[:, 1], indices[:, 2]])
-            all_fg_masks.append(batch["fg_mask"][i][indices[:, 1], indices[:, 2]])
+            if "fg_mask" in batch:
+                all_fg_masks.append(batch["fg_mask"][i][indices[:, 1], indices[:, 2]])
 
     indices = torch.cat(all_indices, dim=0)
 
@@ -137,7 +139,8 @@ def collate_image_dataset_batch_list(batch: Dict, num_rays_per_batch: int, keep_
     }
 
     collated_batch["image"] = torch.cat(all_images, dim=0)
-    collated_batch["fg_mask"] = torch.cat(all_fg_masks, dim=0)
+    if len(all_fg_masks) > 0:
+        collated_batch["fg_mask"] = torch.cat(all_fg_masks, dim=0)
 
     if "sparse_pts" in batch:
         rand_idx = random.randint(0, num_images - 1)

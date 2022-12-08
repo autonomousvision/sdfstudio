@@ -315,7 +315,10 @@ class ViewerState:
         image_indices = self._pick_drawn_image_idxs(len(dataset))
         for idx in image_indices:
             image = dataset[idx]["image"]
-            bgr = image[..., [2, 1, 0]]
+            if isinstance(image, BasicImages):
+                bgr = image.images[0][..., [2, 1, 0]]
+            else:
+                bgr = image[..., [2, 1, 0]]
             camera_json = dataset.cameras.to_json(camera_idx=idx, image=bgr, max_size=100)
             self.vis[f"sceneState/cameras/{idx:06d}"].write(camera_json)
 

@@ -158,7 +158,7 @@ class NerfactoModel(Model):
             for i in range(num_prop_nets):
                 prop_net_args = self.config.proposal_net_args_list[min(i, len(self.config.proposal_net_args_list) - 1)]
                 network = HashMLPDensityField(
-                    aabb,
+                    self.scene_box.aabb,
                     spatial_distortion=scene_contraction,
                     **prop_net_args,
                 )
