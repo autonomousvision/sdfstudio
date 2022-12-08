@@ -18,7 +18,7 @@ CONSOLE = Console(width=120)
 
 @dataclass
 class ExtractMesh:
-    """Load a checkpoint, compute some PSNR metrics, and save it to a JSON file."""
+    """Load a checkpoint, run marching cubes, extract mesh, and save it to a ply file."""
 
     # Path to config YAML file.
     load_config: Path
@@ -32,6 +32,7 @@ class ExtractMesh:
     def main(self) -> None:
         """Main function."""
         assert self.resolution % 512 == 0
+        assert str(self.output_path)[-4:] == ".ply"
 
         _, pipeline, _ = eval_setup(self.load_config)
 
