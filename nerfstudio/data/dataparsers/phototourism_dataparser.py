@@ -137,7 +137,7 @@ class Phototourism(DataParser):
         else:
             raise ValueError(f"Unknown dataparser split {split}")
 
-        poses = camera_utils.auto_orient_and_center_poses(
+        poses, _ = camera_utils.auto_orient_and_center_poses(
             poses, method=self.config.orientation_method, center_poses=self.config.center_poses
         )
 
@@ -148,13 +148,20 @@ class Phototourism(DataParser):
 
         poses[:, :3, 3] *= scale_factor * self.config.scale_factor
 
+        # add an offset so that the object are centered
+        # poses[:, 1, 3] -= 1.0
+
         # in x,y,z order
         # assumes that the scene is centered at the origin
         aabb_scale = self.config.scene_scale
         scene_box = SceneBox(
             aabb=torch.tensor(
                 [[-aabb_scale, -aabb_scale, -aabb_scale], [aabb_scale, aabb_scale, aabb_scale]], dtype=torch.float32
-            )
+            ),
+            radius=aabb_scale,
+            near=0.01,
+            far=3.5 * aabb_scale,
+            collider_type="near_far",
         )
 
         cameras = Cameras(
