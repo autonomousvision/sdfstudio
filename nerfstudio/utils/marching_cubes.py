@@ -198,7 +198,13 @@ def get_surface_occupancy(
         verts, faces, normals, _ = measure.marching_cubes(
             volume=z.reshape(resolution, resolution, resolution),
             level=level,
+            spacing=(
+                (grid_max[0] - grid_min[0]) / (N - 1),
+                (grid_max[1] - grid_min[1]) / (N - 1),
+                (grid_max[2] - grid_min[2]) / (N - 1),
+            ),
         )
+        verts = verts + np.array(grid_min)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         meshexport = trimesh.Trimesh(verts, faces, normals)
         meshexport.export(str(output_path))
