@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pymeshlab
 import torch
@@ -16,7 +18,7 @@ def get_surface_sliding(
     return_mesh=False,
     level=0,
     coarse_mask=None,
-    output_path="test.ply",
+    output_path: Path = Path("test.ply"),
     simplify_mesh=True,
 ):
     assert resolution % 512 == 0
@@ -165,7 +167,13 @@ def get_surface_sliding(
 
 @torch.no_grad()
 def get_surface_occupancy(
-    occupancy_fn, resolution=512, grid_boundary=[-0.5, 0.5], return_mesh=False, level=0, device=None
+    occupancy_fn,
+    resolution=512,
+    grid_boundary=[-0.5, 0.5],
+    return_mesh=False,
+    level=0.5,
+    device=None,
+    output_path: Path = Path("test.ply"),
 ):
     grid_min = [grid_boundary[0], grid_boundary[0], grid_boundary[0]]
     grid_max = [grid_boundary[1], grid_boundary[1], grid_boundary[1]]
@@ -189,10 +197,10 @@ def get_surface_occupancy(
     if not (np.min(z) > level or np.max(z) < level):
         verts, faces, normals, _ = measure.marching_cubes(
             volume=z.reshape(resolution, resolution, resolution),
-            level=0.0,
+            level=level,
         )
-
+        output_path.parent.mkdir(parents=True, exist_ok=True)
         meshexport = trimesh.Trimesh(verts, faces, normals)
-        meshexport.export("test.ply")
+        meshexport.export(str(output_path))
     else:
         print("=================================================no surface skip")
