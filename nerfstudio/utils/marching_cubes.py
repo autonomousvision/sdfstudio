@@ -14,7 +14,8 @@ upsample = torch.nn.Upsample(scale_factor=2, mode="nearest")
 def get_surface_sliding(
     sdf,
     resolution=512,
-    grid_boundary=[-0.5, 0.5],
+    bounding_box_min=(-1.0, -1.0, -1.0),
+    bounding_box_max=(1.0, 1.0, 1.0),
     return_mesh=False,
     level=0,
     coarse_mask=None,
@@ -31,8 +32,8 @@ def get_surface_sliding(
     level = 0
     N = resN // cropN
 
-    grid_min = [grid_boundary[0], grid_boundary[0], grid_boundary[0]]
-    grid_max = [grid_boundary[1], grid_boundary[1], grid_boundary[1]]
+    grid_min = bounding_box_min
+    grid_max = bounding_box_max
     xs = np.linspace(grid_min[0], grid_max[0], N + 1)
     ys = np.linspace(grid_min[1], grid_max[1], N + 1)
     zs = np.linspace(grid_min[2], grid_max[2], N + 1)
@@ -169,14 +170,15 @@ def get_surface_sliding(
 def get_surface_occupancy(
     occupancy_fn,
     resolution=512,
-    grid_boundary=[-0.5, 0.5],
+    bounding_box_min=(-1.0, -1.0, -1.0),
+    bounding_box_max=(1.0, 1.0, 1.0),
     return_mesh=False,
     level=0.5,
     device=None,
     output_path: Path = Path("test.ply"),
 ):
-    grid_min = [grid_boundary[0], grid_boundary[0], grid_boundary[0]]
-    grid_max = [grid_boundary[1], grid_boundary[1], grid_boundary[1]]
+    grid_min = bounding_box_min
+    grid_max = bounding_box_max
     N = resolution
     xs = np.linspace(grid_min[0], grid_max[0], N)
     ys = np.linspace(grid_min[1], grid_max[1], N)

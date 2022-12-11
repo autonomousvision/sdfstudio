@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Tuple
 
 import torch
 import tyro
@@ -31,10 +32,15 @@ class ExtractMesh:
     simplify_mesh: bool = True
     # extract the mesh using occupancy field (unisurf) or SDF, default sdf
     is_occupancy: bool = False
+    """Minimum of the bounding box."""
+    bounding_box_min: Tuple[float, float, float] = (-1.0, -1.0, -1.0)
+    """Maximum of the bounding box."""
+    bounding_box_max: Tuple[float, float, float] = (1.0, 1.0, 1.0)
 
     def main(self) -> None:
         """Main function."""
         assert str(self.output_path)[-4:] == ".ply"
+        self.output_path.parent.mkdir(parents=True, exist_ok=True)
 
         _, pipeline, _ = eval_setup(self.load_config)
 
@@ -45,7 +51,8 @@ class ExtractMesh:
                     10 * pipeline.model.field.forward_geonetwork(x)[:, 0].contiguous()
                 ),
                 resolution=self.resolution,
-                grid_boundary=[-1.0, 1.0],
+                bounding_box_min=self.bounding_box_min,
+                bounding_box_max=self.bounding_box_max,
                 level=0.5,
                 device=pipeline.model.device,
                 output_path=self.output_path,
@@ -56,7 +63,8 @@ class ExtractMesh:
             get_surface_sliding(
                 sdf=lambda x: pipeline.model.field.forward_geonetwork(x)[:, 0].contiguous(),
                 resolution=self.resolution,
-                grid_boundary=[-1.0, 1.0],
+                bounding_box_min=self.bounding_box_min,
+                bounding_box_max=self.bounding_box_max,
                 coarse_mask=pipeline.model.scene_box.coarse_binary_gird,
                 output_path=self.output_path,
                 simplify_mesh=self.simplify_mesh,
