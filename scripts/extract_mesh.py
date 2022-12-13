@@ -29,7 +29,7 @@ class ExtractMesh:
     # Name of the output file.
     output_path: Path = Path("output.ply")
     # Whether to simplify the mesh.
-    simplify_mesh: bool = True
+    simplify_mesh: bool = False
     # extract the mesh using occupancy field (unisurf) or SDF, default sdf
     is_occupancy: bool = False
     """Minimum of the bounding box."""
