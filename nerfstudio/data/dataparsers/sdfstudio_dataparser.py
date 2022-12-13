@@ -25,6 +25,7 @@ from PIL import Image
 from rich.console import Console
 from torchtyping import TensorType
 
+from nerfstudio.cameras import camera_utils
 from nerfstudio.cameras.cameras import Cameras, CameraType
 from nerfstudio.data.dataparsers.base_dataparser import (
     DataParser,
@@ -114,6 +115,7 @@ class SDFStudioDataParserConfig(DataParserConfig):
     the last element is the most similar to the first (ref)"""
     skip_every_for_val_split: int = 1
     """sub sampling validation images"""
+    auto_orient: bool = False
 
 
 @dataclass
@@ -186,6 +188,22 @@ class SDFStudio(DataParser):
 
         # Convert from COLMAP's/OPENCV's camera coordinate system to nerfstudio
         camera_to_worlds[:, 0:3, 1:3] *= -1
+
+        if self.config.auto_orient:
+            camera_to_worlds, transform = camera_utils.auto_orient_and_center_poses(
+                camera_to_worlds,
+                method="up",
+                center_poses=False,
+            )
+
+            # we should also transform normal accordingly
+            normal_images_aligned = []
+            for normal_image in normal_images:
+                h, w, _ = normal_image.shape
+                normal_image = transform[:3, :3] @ normal_image.reshape(-1, 3).permute(1, 0)
+                normal_image = normal_image.permute(1, 0).reshape(h, w, 3)
+                normal_images_aligned.append(normal_image)
+            normal_images = normal_images_aligned
 
         # scene box from meta data
         meta_scene_box = meta["scene_box"]
