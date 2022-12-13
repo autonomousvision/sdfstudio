@@ -208,6 +208,8 @@ class RenderTrajectory:
 
         install_checks.check_ffmpeg_installed()
         seconds = self.seconds
+        if self.output_format == "video":
+            assert str(self.output_path)[-4:] == ".mp4"
 
         if self.traj == "filename":
             with open(self.camera_path_filename, "r", encoding="utf-8") as f:
