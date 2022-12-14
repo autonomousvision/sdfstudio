@@ -141,9 +141,9 @@ Please refer to [data](docs/sdfstudio-data.md) for how to use custom data.
 <a href="https://github.com/nerfstudio-project/nerfstudio">
 <!-- pypi-strip -->
 <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://docs.nerf.studio/en/latest/_images/logo-dark.png" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://docs.nerf.studio/en/latest/_images/logo.png" />
 <!-- /pypi-strip -->
-    <img alt="tyro logo" src="https://docs.nerf.studio/en/latest/_images/logo-dark.png" width="150px" />
+    <img alt="tyro logo" src="https://docs.nerf.studio/en/latest/_images/logo.png" width="150px" />
 <!-- pypi-strip -->
 </picture>
 <!-- /pypi-strip -->
