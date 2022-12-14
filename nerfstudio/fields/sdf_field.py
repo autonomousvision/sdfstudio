@@ -270,7 +270,7 @@ class SDFField(Field):
 
             if self.config.weight_norm:
                 lin = nn.utils.weight_norm(lin)
-                print("=======", lin.weight.shape)
+                # print("=======", lin.weight.shape)
             setattr(self, "glin" + str(l), lin)
 
         # laplace function for transform sdf to density from VolSDF
@@ -300,7 +300,7 @@ class SDFField(Field):
 
             if self.config.weight_norm:
                 lin = nn.utils.weight_norm(lin)
-            print("=======", lin.weight.shape)
+            # print("=======", lin.weight.shape)
             setattr(self, "clin" + str(l), lin)
 
         self.softplus = nn.Softplus(beta=100)

@@ -146,7 +146,7 @@ class TrainerConfig(PrintableConfig):
     """Maximum number of iterations to run."""
     mixed_precision: bool = False
     """Whether or not to use mixed precision for training."""
-    relative_model_dir: Path = Path("nerfstudio_models/")
+    relative_model_dir: Path = Path("sdfstudio_models/")
     """Relative path to save all checkpoints."""
     save_only_latest_checkpoint: bool = True
     """Whether to only save the latest checkpoint or all checkpoints."""

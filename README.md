@@ -48,10 +48,10 @@ pip install -e .
 
 ## 2. Train your first model!
 
-The following will train a _NeuS-facto_ model, our recommended model for real world scenes.
+The following will train a _NeuS-facto_ model,
 
 ```bash
-# Download some test data:
+# Download some test data: you might need to install curl if your system don't have that
 ns-download-data sdfstudio
 
 # Train model on the dtu dataset scan65
@@ -67,7 +67,7 @@ If everything works, you should see training progress like the following:
     <img width="800" alt="image" src="media/training-process.png">
 </p>
 
-Navigating to the link at the end of the terminal will load the webviewer. If you are running on a remote machine, you will need to port forward the websocket port (defaults to 7007).
+Navigating to the link at the end of the terminal will load the webviewer (developled by nerfstudio). If you are running on a remote machine, you will need to port forward the websocket port (defaults to 7007). With an RTX3090 GPU, it takes ~15 mins for 20K iterations but you can already see reasonable reconstruction results after 2K iterations in the webviewer. 
 
 <p align="center">
     <img width="800" alt="image" src="media/viewer_screenshot.png">
@@ -78,14 +78,14 @@ Navigating to the link at the end of the terminal will load the webviewer. If yo
 It is possible to load a pretrained model by running
 
 ```bash
-ns-train neus-facto sdfstudio-data --data data/sdfstudio-demo-data/dtu-scan65 --trainer.load-dir {outputs/neus-facto-dtu65/neus-facto/XXX/nerfstudio_models}
+ns-train neus-facto sdfstudio-data --data data/sdfstudio-demo-data/dtu-scan65 --trainer.load-dir {outputs/neus-facto-dtu65/neus-facto/XXX/sdfstudio_models}
 ```
 
 This will automatically start training. If you do not want it to train, add `--viewer.start-train False` to your training command.
 
 ## 3. Exporting Results
 
-Once you have a NeRF model you can either render out a video or export a point cloud.
+Once you have a trained model you can either render out a video or export a point cloud.
 
 ### Extract Mesh
 ```bash
