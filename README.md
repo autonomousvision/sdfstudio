@@ -1,7 +1,7 @@
 <p align="center">
     <img alt="nerfstudio" src="media/sdf_studio_4.svg" width="300">
     <h1 align="center">A Unified Framework for Surface Reconstruction</h1>
-    <h3 align="center"><a href="https://niujinshuchong.github.io/monosdf/">Project Page</a> | <a href="https://arxiv.org/abs/2206.00665">Documentation</a> | <a href="https://arxiv.org/abs/2206.00665">Data</a>  </h3>
+    <h3 align="center"><a href="https://niujinshuchong.github.io/monosdf/">Project Page</a> | <a href="docs/sdfstudio-methods.md">Documentation</a> | <a href="docs/sdfstudio-data.md">Data</a>  </h3>
     <img src="media/overview.svg" center width="95%"/>
 </p>
 
@@ -133,18 +133,7 @@ We support three different methods to track training progress, using the viewer,
 
 ## 5. Using Custom Data
 
-We supports all 
-Using an existing dataset is great, but likely you want to use your own data! We support various methods for using your own data. Before it can be used in nerfstudio, the camera location and orientations must be determined and then converted into our format using `ns-process-data`. We rely on external tools for this, instructions and information can be found in the documentation.
-
-| Data                                                                                              | Requirements     | Preprocessing Speed |
-| ------------------------------------------------------------------------------------------------- | ---------------- | ------------------- |
-| 📷 [Images](https://docs.nerf.studio/en/latest/quickstart/custom_dataset.html#images-or-video)    | COLMAP           | 🐢                  |
-| 📹 [Video](https://docs.nerf.studio/en/latest/quickstart/custom_dataset.html#images-or-video)     | COLMAP           | 🐢                  |
-| 📱 [Polycam](https://docs.nerf.studio/en/latest/quickstart/custom_dataset.html#polycam-capture)   | LiDAR iOS Device | 🐇                  |
-| 📱 [Record3D](https://docs.nerf.studio/en/latest/quickstart/custom_dataset.html#record3d-capture) | LiDAR iOS Device | 🐇                  |
-| 🖥 [Metashape](https://docs.nerf.studio/en/latest/quickstart/custom_dataset.html#metashape)        |                  | 🐢                  |
-| 🛠 [Custom](https://docs.nerf.studio/en/latest/quickstart/data_conventions.html)                   | Poses            | 🐇                  |
-
+Please refer to [data](docs/sdfstudio-data.md) for how to use custom data.
 
 
 # Built On
