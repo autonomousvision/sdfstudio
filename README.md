@@ -1,7 +1,7 @@
 <p align="center">
     <img alt="nerfstudio" src="media/sdf_studio_4.svg" width="300">
     <h1 align="center">A Unified Framework for Surface Reconstruction</h1>
-    <h3 align="center"><a href="https://niujinshuchong.github.io/monosdf/">Project Page</a> | <a href="https://arxiv.org/abs/2206.00665">Document</a> | <a href="https://arxiv.org/abs/2206.00665">Data</a>  </h3>
+    <h3 align="center"><a href="https://niujinshuchong.github.io/monosdf/">Project Page</a> | <a href="https://arxiv.org/abs/2206.00665">Documentation</a> | <a href="https://arxiv.org/abs/2206.00665">Data</a>  </h3>
     <img src="media/overview.svg" center width="95%"/>
 </p>
 
@@ -46,9 +46,9 @@ pip install --upgrade pip setuptools
 pip install -e .
 ```
 
-## 2. Training your first model!
+## 2. Train your first model!
 
-The following will train a _neus-facto_ model, our recommended model for real world scenes.
+The following will train a _NeuS-facto_ model, our recommended model for real world scenes.
 
 ```bash
 # Download some test data:

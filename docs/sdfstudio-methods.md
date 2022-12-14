@@ -1,6 +1,6 @@
 # Documentation
 
-This is a short documentation of sdfstudio and it is organized as:
+This is a short documentation of SDFStudio and it is organized as:
 
 - [Methods](#Methods)
 - [Representations](#Representations)
@@ -12,13 +12,13 @@ We have implemented multiple neural implicit surface reconstruction methods and 
 
 ## UniSurf
 
-UniSurf first finds the intersection of the surface and sample points around the surface. The sampling range starts from a large range and decrease to a small range during training. When no surface is found for a ray, it samples uniformly according to the near and far value of the ray. To train a unisurf model, you could run as:
+UniSurf first finds the intersection of the surface and sample points around the surface. The sampling range starts from a large range and decrease to a small range during training. When no surface is found for a ray, it samples uniformly according to the near and far value of the ray. To train a UniSurf model, you could run as:
 ```
 ns-train unisurf --pipeline.model.sdf-field.inside-outside False sdfstudio-data --data data/sdfstudio-demo-data/dtu-scan65
 ```
 
 ## VolSDF
-VolSDF uses error-bound sampler [see the paper for details] and convert the sdf value to density and then use normal volume rendering. To train a unisurf model, you could run as:
+VolSDF uses error-bound sampler [see the paper for details] and convert the sdf value to density and then use normal volume rendering. To train a VolSDF model, you could run as:
 ```
 ns-train volsdf --pipeline.model.sdf-field.inside-outside False sdfstudio-data --data data/sdfstudio-demo-data/dtu-scan65
 ```
@@ -39,14 +39,14 @@ ns-train monosdf --pipeline.model.sdf-field.inside-outside True sdfstudio-data -
 
 ```
 
-## Mono-unisurf
-Similar to monosdf, Mono-unisurf use monocualr prior as additional supervision for unisurf. It can be trained as:
+## Mono-UniSurf
+Similar to monosdf, Mono-UniSurf use monocualr prior as additional supervision for UniSurf. It can be trained as:
 ```
 ns-train mono-unisurf --pipeline.model.sdf-field.inside-outside True sdfstudio-data --data data/sdfstudio-demo-data/replica-room0 --include-mono-prior True
 ```
 
 ## Mono-neus
-Similar to monosdf, mono-neus use monocualr prior as additional supervision for neus. It can be trained as:
+Similar to monosdf, mono-neus use monocualr prior as additional supervision for NeuS. It can be trained as:
 ```
 ns-train mono-neus --pipeline.model.sdf-field.inside-outside True sdfstudio-data --data data/sdfstudio-demo-data/replica-room0 --include-mono-prior True
 ```
@@ -57,14 +57,14 @@ ns-train mono-neus --pipeline.model.sdf-field.inside-outside True sdfstudio-data
 ns-train geo-neus --pipeline.model.sdf-field.inside-outside False sdfstudio-data -data data/dtu/scan24 --load-pairs True
 ```
 
-## Geo-unisurf
-The idea of geo-neus can also applied to unisurf, which we call geo-unisurf. It can be run as:
+## Geo-UniSurf
+The idea of geo-neus can also applied to UniSurf, which we call geo-UniSurf. It can be run as:
 ```
 ns-train geo-unisurf --pipeline.model.sdf-field.inside-outside False sdfstudio-data -data data/dtu/scan24 --load-pairs True
 ```
 
 ## Geo-VolSDF
-Same here, we applied the idea of geo-neus to volsdf. It can be run as:
+Same here, we applied the idea of geo-neus to VolSDF. It can be run as:
 ```
 ns-train geo-volsdf --pipeline.model.sdf-field.inside-outside False sdfstudio-data -data data/dtu/scan24 --load-pairs True
 ```
@@ -77,7 +77,7 @@ ns-train neus-acc --pipeline.model.sdf-field.inside-outside False sdfstudio-data
 ```
 
 ## NeuS-facto
-NeuS-facto is inspired by nerfacto in nerfstudio, where a proposal network proposed in mipnerf360 is used for sampling points along the ray. We apply the idea to neus to speed up the sampling process and reduce the number of samples for each ray. It can be trained as:
+NeuS-facto is inspired by nerfacto in nerfstudio, where a proposal network proposed in mipnerf360 is used for sampling points along the ray. We apply the idea to NeuS to speed up the sampling process and reduce the number of samples for each ray. It can be trained as:
 ```
 ns-train neus-facto --pipeline.model.sdf-field.inside-outside False sdfstudio-data -data data/dtu/scan65
 ```
@@ -159,14 +159,14 @@ The mask loss is usually helpful to seperate foreground object and background. H
 
 ## Eikonal loss
 
-Eikonal loss is used in all SDF-based method to regularize the SDF field except unisurf because unisurf use occupancy field. You could change the weight for eikonal loss as:
+Eikonal loss is used in all SDF-based method to regularize the SDF field except UniSurf because UniSurf use occupancy field. You could change the weight for eikonal loss as:
 ```
 --pipeline.model.eikonal-loss-mult 0.01
 ```
 
 ## Smoothness Loss
 
-The smoothness enforce smoothness surface, it is used in unisurf and can be config as
+The smoothness enforce smoothness surface, it is used in UniSurf and can be config as
 ```
 --pipeline.model.smooth-loss-multi 0.01
 ```

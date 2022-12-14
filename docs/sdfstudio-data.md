@@ -3,11 +3,11 @@
 This is a short documentation of sdfstudio data and it is organized as:
 
 - [Dataset format](#Dataset-format)
-- [Existing dataset](#Existing-dataset)
-- [Custom dataset](#Custom-dataset)
+- [Existing datasets](#Existing-dataset)
+- [Customize your own dataset](#Custom-dataset)
 
 # Dataset format
-We scan scan65 of dtu scene to show how the data are organized. It looks like the following:
+We use scan65 of DTU scene to show how the data are organized. It looks like the following:
 ```bash
 └── scan65
   └── meta_data.json
@@ -67,14 +67,14 @@ The json file (meta_data.json) stores meta data of the scene, it has the followi
 }
 ```
 
-The paris.txt is used for multi-view photometric consistency loss. It has the following format:
+The `paris.txt` is used for multi-view photometric consistency loss. It has the following format:
 ```bash
 # ref image, source image 1, source image 2, ..., source image N
 000000.png 000032.png 000023.png 000028.png 000031.png 000029.png 000030.png 000024.png 000002.png 000015.png 000025.png ...
 000001.png 000033.png 000003.png 000022.png 000016.png 000027.png 000023.png 000007.png 000011.png 000026.png 000024.png ...
 ...
 ```
-# Existing dataset
+# Existing datasets
 
 We adapted the dataset used in MonoSDF to sdfstudio format and it can be downloaded with
 ```
@@ -82,21 +82,21 @@ ns-download-data sdfstudio --dataset-name DATASET_NAME
 ```
 The `DATASET_NAME` can be chosen from `sdfstudio-demo-data, dtu, replica, scannet, tanks-and-temple, tanks-and-temple-highres, all`. Use all if you want to download all the dataset.
 
-Note that for the dtu dataset, you should use `--pipeline.model.sdf-field.inside-outside False` and for the indoor dataset you should use `--pipeline.model.sdf-field.inside-outside True` druing training.
+Note that for the DTU dataset, you should use `--pipeline.model.sdf-field.inside-outside False` and for the indoor dataset you should use `--pipeline.model.sdf-field.inside-outside True` druing training.
 
 We also provide the preprocessed heritage data from neuralreconW and it can be downloaded with
 ```
 ns-download-data sdfstudio --dataset-name heritage
 ```
 
-# Custom dataset
+# Customize your own dataset
 
 You could implement your own data-parser to use custom dataset or convert you dataset to sdfstudio data format as shown above. Here we provide an example to convert scannet dataset to sdfstudio data format. Please change the path accordingly.
 ```bash
 python scripts/datasets/process_scannet_to_sdfstudio.py --input_path /home/yuzh/Projects/datasets/scannet/scene0050_00 --output_path data/custom/scannet_scene0050_00
 ```
 
-Then, you can extract monocular depths and normals (please install [omnidata model](https://github.com/EPFL-VILAB/omnidata) before running the command):
+Next, you can extract monocular depths and normals (please install [omnidata model](https://github.com/EPFL-VILAB/omnidata) before running the command):
 ```bash
 python scripts/datasets/extract_monocular_cues.py --task normal --img_path data/custom/scannet_scene0050_00/ --output_path data/custom/scannet_scene0050_00 --omnidata_path YOUR_OMNIDATA_PATH --pretrained_models PRETRAINED_MODELS
 python scripts/datasets/extract_monocular_cues.py --task normal --img_path data/custom/scannet_scene0050_00/ --output_path data/custom/scannet_scene0050_00 --omnidata_path YOUR_OMNIDATA_PATH --pretrained_models PRETRAINED_MODELS
