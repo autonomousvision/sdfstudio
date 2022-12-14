@@ -45,7 +45,7 @@ Similar to monosdf, Mono-UniSurf use monocualr prior as additional supervision f
 ns-train mono-unisurf --pipeline.model.sdf-field.inside-outside True sdfstudio-data --data data/sdfstudio-demo-data/replica-room0 --include-mono-prior True
 ```
 
-## Mono-neus
+## Mono-NeuS
 Similar to monosdf, mono-neus use monocualr prior as additional supervision for NeuS. It can be trained as:
 ```
 ns-train mono-neus --pipeline.model.sdf-field.inside-outside True sdfstudio-data --data data/sdfstudio-demo-data/replica-room0 --include-mono-prior True
@@ -146,11 +146,11 @@ ns-train volsdf --pipeline.model.sdf-field.num-layers-color 2 --pipeline.model.s
 
 # Supervisions
 
-## RGB Loss
+## RGB loss
 
 We use L1 loss for the RGB loss to supervise the rendered color for each ray. It is always used for all models.
 
-## Mask Loss
+## Mask loss
 
 The mask loss is usually helpful to seperate foreground object and background. However, it needs additonal inputs. For example, in neuralreconW, a segmentation network is used to predict the sky region and the sky segmentation is used as label for mask loss. It is used by default if masks are provided in the dataset. You could change the weight for the mask loss with
 ```
@@ -164,7 +164,7 @@ Eikonal loss is used in all SDF-based method to regularize the SDF field except 
 --pipeline.model.eikonal-loss-mult 0.01
 ```
 
-## Smoothness Loss
+## Smoothness loss
 
 The smoothness enforce smoothness surface, it is used in UniSurf and can be config as
 ```
