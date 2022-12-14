@@ -1,13 +1,13 @@
 # Data
 
-This is a short documentation of sdfstudio data and it is organized as:
+This is a short documentation of sdfstudio's data format and it is organized as:
 
 - [Dataset format](#Dataset-format)
 - [Existing dataset](#Existing-dataset)
 - [Custom dataset](#Custom-dataset)
 
 # Dataset format
-We scan scan65 of dtu scene to show how the data are organized. It looks like the following:
+We use scan65 of the DTU dataset to show how sdfstudio's data are organized. It looks like the following:
 ```bash
 └── scan65
   └── meta_data.json
@@ -80,7 +80,7 @@ We adapted the dataset used in MonoSDF to sdfstudio format and it can be downloa
 ```
 ns-download-data sdfstudio --dataset-name DATASET_NAME
 ```
-The `DATASET_NAME` can be chosen from `sdfstudio-demo-data, dtu, replica, scannet, tanks-and-temple, tanks-and-temple-highres, all`. Use all if you want to download all the dataset.
+The `DATASET_NAME` can be chosen from `sdfstudio-demo-data, dtu, replica, scannet, tanks-and-temple, tanks-and-temple-highres, all`. Use `all` if you want to download all the dataset.
 
 Note that for the dtu dataset, you should use `--pipeline.model.sdf-field.inside-outside False` and for the indoor dataset you should use `--pipeline.model.sdf-field.inside-outside True` druing training.
 
@@ -91,7 +91,7 @@ ns-download-data sdfstudio --dataset-name heritage
 
 # Custom dataset
 
-You could implement your own data-parser to use custom dataset or convert you dataset to sdfstudio data format as shown above. Here we provide an example to convert scannet dataset to sdfstudio data format. Please change the path accordingly.
+You could implement your own data-parser to use custom dataset or convert your dataset to sdfstudio's data format as shown above. Here we provide an example of converting scannet dataset to sdfstudio's data format. Please change the path accordingly.
 ```bash
 python scripts/datasets/process_scannet_to_sdfstudio.py --input_path /home/yuzh/Projects/datasets/scannet/scene0050_00 --output_path data/custom/scannet_scene0050_00
 ```
