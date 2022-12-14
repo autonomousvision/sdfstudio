@@ -13,14 +13,14 @@ SDF-Studio is a unified and modularized framework for neural implicit surface re
 
 ## 1. Installation: Setup the environment
 
-Sdfstudio is built on top of Nerfstudio. If you already install environment of nerfstudio, it should work out of box for sdfstudio.
+SDFStudio is built on top of Nerfstudio. If you already install environment of nerfstudio, it should work out of box for SDFStudio.
 ### Prerequisites
 
 CUDA must be installed on the system. This library has been tested with version 11.3. You can find more information about installing CUDA [here](https://docs.nvidia.com/cuda/cuda-quick-start-guide/index.html)
 
 ### Create environment
 
-Sdfstudio requires `python >= 3.7`. We recommend using conda to manage dependencies. Make sure to install [Conda](https://docs.conda.io/en/latest/miniconda.html) before proceeding.
+SDFStudio requires `python >= 3.7`. We recommend using conda to manage dependencies. Make sure to install [Conda](https://docs.conda.io/en/latest/miniconda.html) before proceeding.
 
 ```bash
 conda create --name sdfstudio -y python=3.8
@@ -37,7 +37,7 @@ pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 -f https://download.py
 pip install git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch
 ```
 
-### Installing sdfstudio
+### Installing SDFStudio
 
 ```bash
 git clone https://github.com/autonomousvision/sdfstudio.git
@@ -195,7 +195,7 @@ Using an existing dataset is great, but likely you want to use your own data! We
 
 If you use this library or find the documentation useful for your research, please consider citing:
 
-```
+```bibtex
 @misc{Yu2022SDFStudio,
   author    = {Zehao Yu, Anpei Chen, Bozidar Antic, Songyou Peng, Apratim Bhattacharyya,
                Michael Niemeyer, Siyu Tang Torsten Sattler and Andreas Geiger},
