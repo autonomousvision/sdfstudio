@@ -8,7 +8,7 @@ This is a short documentation of SDFStudio and it is organized as:
 
 # Methods
 
-We have implemented multiple neural implicit surface reconstruction methods and three basic methods are UniSurf, VolSDF, and NeuS. The main difference of these method is how the points along the ray are sampled and how to use SDF for volume rendering. For detailed of these methods, please check the corresponding paper. Here we explain these methods shortly and give examples of how to use it in the following:
+We have implemented multiple neural implicit surface reconstruction methods and three basic methods are UniSurf, VolSDF, and NeuS. The main difference of these methods is how the points along the ray are sampled and how to use SDF for volume rendering. For more details of these methods, please check the corresponding paper. Here we explain these methods shortly and give examples of how to use it in the following:
 
 ## UniSurf
 
@@ -18,20 +18,20 @@ ns-train unisurf --pipeline.model.sdf-field.inside-outside False sdfstudio-data 
 ```
 
 ## VolSDF
-VolSDF uses error-bound sampler [see the paper for details] and convert the sdf value to density and then use normal volume rendering. To train a VolSDF model, you could run as:
+VolSDF uses error-bound sampler [see the paper for details] and convert the SDF value to density and then use normal volume rendering. To train a VolSDF model, you could run as:
 ```
 ns-train volsdf --pipeline.model.sdf-field.inside-outside False sdfstudio-data --data data/sdfstudio-demo-data/dtu-scan65
 ```
 
 ## NeuS
-NeuS uses hierachical sampling with multiple steps and convert the sdf value to alpha value based on sigmoid function [see the paper for details]. To train a NeuS model, you could run as:
+NeuS uses hierachical sampling with multiple steps and convert the sdf value to alpha value based on a sigmoid function [see the paper for details]. To train a NeuS model, you could run as:
 
 ```
 ns-train neus --pipeline.model.sdf-field.inside-outside False sdfstudio-data --data data/sdfstudio-demo-data/dtu-scan65
 ```
 
 ## MonoSDF
-MonoSDF is built on top of VolSDF and propose to use monocualr prior as additional supervision, it 
+MonoSDF is built on top of VolSDF and propose to use monocualr prior as additional supervision. It is useful in sparse view cases and in indoor scenes.
 
 To train a monosdf model in the indoor scene, you could run as:
 ```
@@ -52,7 +52,7 @@ ns-train mono-neus --pipeline.model.sdf-field.inside-outside True sdfstudio-data
 ```
 
 ## Geo-NeuS
-
+Geo-NeuS is built on top of NeuS and propose an multi-view photometric consistency loss for optimization. To train a geo-neus model on the DTU dataset, you can run:
 ```
 ns-train geo-neus --pipeline.model.sdf-field.inside-outside False sdfstudio-data -data data/dtu/scan24 --load-pairs True
 ```
@@ -84,7 +84,7 @@ ns-train neus-facto --pipeline.model.sdf-field.inside-outside False sdfstudio-da
 
 ## NeuralReconW
 
-NeuralReconW is specifically designed for heritage scenes and hence can only be applied to these scenes. Specifically, it uses sparse point cloud to create an coarse occupancy grid and for each ray, we first find the intersection with the occupancy grid to determine near and far for the ray. then it samples points uniformly within the near and far range. Further, it also use a surface guided sampling, where it first find the intersection of the surface and then set a , To speed up the sampling, it use a more fine-graind cache for sdf so that it don't need to query the network for intersection. The sdf cache will be updated during training (e.g. every 5K iterations). To train a NeuralReconW model, you could run the following.
+NeuralReconW is specifically designed for heritage scenes and hence can only be applied to these scenes. Specifically, it uses sparse point cloud from colmap to create an coarse occupancy grid. Then for each ray, it first find the intersection with the occupancy grid to determine near and far for the ray. Then it samples points uniformly within the near and far range. Further, it also use a surface guided sampling, where it first find the intersection of the surface and only sample points in a small range around the surface. To speed up the sampling, it use a high-resolution fine-graind grid to cache sdf field so that it don't need to query the network for surface intersection. The sdf cache will be updated during training (e.g. every 5K iterations). To train a NeuralReconW model, you could run the following.
 
 ```
 ns-train neusW --pipeline.model.sdf-field.inside-outside False heritage-data --data data/heritage/brandenburg_gate
@@ -92,13 +92,13 @@ ns-train neusW --pipeline.model.sdf-field.inside-outside False heritage-data --d
 
 # Representations
 
-The neural representation contains two parts, a geometric network and a color network. The geometric network takes a 3D position as input and outputs a sdf value, a normal vector, and a geometric feautre vector. And the color network takes a 3D position and view direction together with the normal vector and the geometric feautre vector from geometric network and as inputs and outputs a RGB color vector.
+The neural representation contains two parts, a geometric network and a color network. The geometric network takes a 3D position as input and outputs a sdf value, a normal vector, and a geometric feautre vector. The color network takes a 3D position and view direction together with the normal vector and the geometric feautre vector from geometric network and as inputs and outputs a RGB color vector.
 
 We support three representations for the geometric network: MLPs, Multi-res feature grids, and Tri-plane. We now explain the detailes and how to use it in the following:
 
 ## MLPs
 
-The 3D position is encoded with positional encoding as in nerf and pass to a multi-layer perception network to prediction sdf, normal, and geometric feature. For example, to use a MLPs with 8 layers and 512 hiddin dimension, you could run as:
+The 3D position is encoded with positional encoding as in nerf and pass to a multi-layer perception network to prediction sdf, normal, and geometric feature. For example, to train volsdf with a MLPs with 8 layers and 512 hiddin dimension, you could run as:
 
 ```
 ns-train volsdf --pipeline.model.sdf-field.use-grid-feature False --pipeline.model.sdf-field.use-grid-feature sdfstudio-data --data YOUR_DATA
@@ -106,7 +106,7 @@ ns-train volsdf --pipeline.model.sdf-field.use-grid-feature False --pipeline.mod
 
 ## Multi-res feature grids
 
-The 3D position is first mapped to a multi-resolution feature grids and use tri-linear interpolation to retreive the corresponding feature vector, it is then used as input to a MLPs to prediction sdf, normal, and geometric feature. For example, to use a multi-res feature grids with 2 layers and 256 hiddin dimension, you could run as:
+The 3D position is first mapped to a multi-resolution feature grids and use tri-linear interpolation to retreive the corresponding feature vector. The feature vector is used as input to a MLPs to prediction sdf, normal, and geometric feature. For example, to use a multi-res feature grids with 2 layers and 256 hiddin dimension, you could run as:
 
 ```
 ns-train volsdf --pipeline.model.sdf-field.use-grid-feature True --pipeline.model.sdf-field.encoding-type hash sdfstudio-data --data YOUR_DATA
@@ -114,7 +114,7 @@ ns-train volsdf --pipeline.model.sdf-field.use-grid-feature True --pipeline.mode
 
 ## Tri-plane
 
-The 3D position is first mapped three orthogonal planes and use linear interpolation to retreive feature vector for each plane and concat them as input the the MLPs. To use tri-plane, you could config as:
+The 3D position is first mapped to three orthogonal planes and use bi-linear interpolation to retreive feature vector for each plane and concat them as input the the MLPs. To use tri-plane representation, you could run as:
 
 ```
 ns-train volsdf --pipeline.model.sdf-field.use-grid-feature True  --pipeline.model.sdf-field.encoding-type tri-plane sdfstudio-data --data YOUR_DATA
@@ -122,19 +122,19 @@ ns-train volsdf --pipeline.model.sdf-field.use-grid-feature True  --pipeline.mod
 
 ## Geometric initilaization
 
-Good initialization is important to get good results. So we usually initialize the sdf as a sphere. For example, in the DTU dataset, we usually init
+Good initialization is important to get good results. So we usually initialize the sdf as a sphere. For example, in the DTU dataset, we usually init as
 
 ```
-ns-train volsdf  --pipeline.model.sdf-field.geometric-init True --pipeline.model.sdf-field.bias 0.5--pipeline.model.sdf-field.inside-outside False
+ns-train volsdf  --pipeline.model.sdf-field.geometric-init True --pipeline.model.sdf-field.bias 0.5 --pipeline.model.sdf-field.inside-outside False
 ```
 
-And in the indoor scene we us
+And in the indoor scene we use the initilization as 
 
 ```
-ns-train volsdf  --pipeline.model.sdf-field.geometric-init True --pipeline.model.sdf-field.bias 0.8 --pipeline.model.sdf-field.inside-outside True
+ns-train volsdf --pipeline.model.sdf-field.geometric-init True --pipeline.model.sdf-field.bias 0.8 --pipeline.model.sdf-field.inside-outside True
 ```
 
-Note that in the indoor scenes, cameras are inside the sphere so we set inside-outside to True such that the point inside the sphere will have positive sdf value and outside the sphere will have negetive value.
+Note that in the indoor scenes, cameras are inside the sphere so we set `inside-outside` to True such that the points inside the sphere will have positive sdf value and outside the sphere will have negetive value.
 
 ## Color network
 
@@ -152,7 +152,7 @@ We use L1 loss for the RGB loss to supervise the rendered color for each ray. It
 
 ## Mask Loss
 
-The mask loss is usually helpful to seperate foreground object and background. However, it needs additonal inputs. For example, in neuralreconW, a segmentation network is used to predict the sky region and the sky segmentation is used as label for mask loss. It is used by default is masks are provided in the dataset. You could change the weight for the mask loss with
+The mask loss is usually helpful to seperate foreground object and background. However, it needs additonal inputs. For example, in neuralreconW, a segmentation network is used to predict the sky region and the sky segmentation is used as label for mask loss. It is used by default if masks are provided in the dataset. You could change the weight for the mask loss with
 ```
 --pipeline.model.fg-mask-loss-mult 0.001
 ```
@@ -186,7 +186,7 @@ The monocular normal consistency loss is proposed in MonoSDF which use a pretrai
 
 ## Multi-view photometric consistency
 
-Multi-view photometric consistency is proposed in Geo-NeuS, where for each ray, it find the intersection with the surface and use homography to warp patches from nearby views to target views and use normalized cross correaltion loss (NCC) for supervision. It can be config as
+Multi-view photometric consistency is proposed in Geo-NeuS, where for each ray, it find the intersection with the surface and use homography to warp patches from nearby views to target view and use normalized cross correaltion loss (NCC) for supervision. It can be config as
 ```
 ns-train volsdf --pipeline.model.patch-size 11 --pipeline.model.patch-warp-loss-mult 0.1 --pipeline.model.topk 4
 ```
