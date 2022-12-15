@@ -109,9 +109,9 @@ ns-render --help
 
 ## 4. Advanced Options
 
-### Training models other than neus-facto
+### Training models other than NeuS-facto
 
-We provide other models than neus-facto, for example if you want to train the original neus model, use the following command,
+We provide many other models than NeuS-facto, see [the documentation](docs/sdfstudio-methods.md). For example, if you want to train the original neus model, use the following command,
 
 ```bash
 ns-train neus --pipeline.model.sdf-field.inside-outside False sdfstudio-data --data data/sdfstudio-demo-data/dtu-scan65
@@ -129,7 +129,7 @@ ns-train neus-facto --help
 
 ### Tensorboard / WandB
 
-Nerfstudio supports three different methods to track training progress, using the viewer, [tensorboard](https://www.tensorflow.org/tensorboard), and [Weights and Biases](https://wandb.ai/site). It can also be used in sdfstudio. You can specify which visualizer to use by appending `--vis {viewer, tensorboard, wandb}` to the training command. Note that only one may be used at a time. Additionally the viewer only works for methods that are fast (ie. neus-facto, neus-acc), for slower methods like neus-facto-bigmlp, use the other loggers.
+Nerfstudio supports three different methods to track training progress, using the viewer, [tensorboard](https://www.tensorflow.org/tensorboard), and [Weights and Biases](https://wandb.ai/site). It can also be used in sdfstudio. You can specify which visualizer to use by appending `--vis {viewer, tensorboard, wandb}` to the training command. Note that only one may be used at a time. Additionally the viewer only works for methods that are fast (ie. NeuS-facto, NeuS-acc), for slower methods like NeuS-facto-bigmlp, use the other loggers.
 
 ## 5. Using Custom Data
 
