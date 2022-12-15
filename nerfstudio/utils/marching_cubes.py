@@ -38,14 +38,14 @@ def get_surface_sliding(
     ys = np.linspace(grid_min[1], grid_max[1], N + 1)
     zs = np.linspace(grid_min[2], grid_max[2], N + 1)
 
-    print(xs)
-    print(ys)
-    print(zs)
+    # print(xs)
+    # print(ys)
+    # print(zs)
     meshes = []
     for i in range(N):
         for j in range(N):
             for k in range(N):
-                print(i, j, k)
+                # print(i, j, k)
                 x_min, x_max = xs[i], xs[i + 1]
                 y_min, y_max = ys[j], ys[j + 1]
                 z_min, z_max = zs[k], zs[k + 1]
@@ -101,11 +101,11 @@ def get_surface_sliding(
                     else:
                         mask = mask.reshape(-1)
                         pts_to_eval = pts[mask]
-                        # import pdb; pdb.set_trace()
+
                         if pts_to_eval.shape[0] > 0:
                             pts_sdf_eval = evaluate(pts_to_eval.contiguous())
                             pts_sdf[mask] = pts_sdf_eval
-                        print("ratio", pts_to_eval.shape[0] / pts.shape[0])
+                        # print("ratio", pts_to_eval.shape[0] / pts.shape[0])
 
                     if pid < 3:
                         # update mask
@@ -139,10 +139,10 @@ def get_surface_sliding(
                         ),
                         mask=current_mask,
                     )
-                    print(np.array([x_min, y_min, z_min]))
-                    print(verts.min(), verts.max())
+                    # print(np.array([x_min, y_min, z_min]))
+                    # print(verts.min(), verts.max())
                     verts = verts + np.array([x_min, y_min, z_min])
-                    print(verts.min(), verts.max())
+                    # print(verts.min(), verts.max())
 
                     meshcrop = trimesh.Trimesh(verts, faces, normals)
                     # meshcrop.export(f"{i}_{j}_{k}.ply")

@@ -44,6 +44,8 @@ class ExtractMesh:
 
         _, pipeline, _ = eval_setup(self.load_config)
 
+        CONSOLE.print("Extract mesh with marching cubes and may take a while")
+
         if self.is_occupancy:
             # for unisurf
             get_surface_occupancy(
