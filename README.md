@@ -1,7 +1,7 @@
 <p align="center">
     <img alt="nerfstudio" src="media/sdf_studio_4.svg" width="300">
     <h1 align="center">A Unified Framework for Surface Reconstruction</h1>
-    <h3 align="center"><a href="https://niujinshuchong.github.io/monosdf/">Project Page</a> | <a href="docs/sdfstudio-methods.md">Documentation</a> | <a href="docs/sdfstudio-data.md">Data</a>  </h3>
+    <h3 align="center"><a href="https://niujinshuchong.github.io/monosdf/">Project Page</a> | <a href="docs/sdfstudio-methods.md">Documentation</a> | <a href="docs/sdfstudio-data.md">Datasets</a> | <a href="docs/sdfstudio-examples.md">Examples</a> </h3>
     <img src="media/overview.svg" center width="95%"/>
 </p>
 
