@@ -96,6 +96,9 @@ ns-extract-mesh --load-config outputs/neus-facto-dtu65/neus-facto/XXX/config.yml
 ```
 ns-render-mesh --meshfile meshes/neus-facto-dtu65.ply --traj interpolate --data.data data/sdfstudio-demo-data/dtu-scan65 --output-path renders/neus-facto-dtu65.mp4
 ```
+You would get the following video if everything works properly.
+
+https://user-images.githubusercontent.com/13434986/207892086-dd6cae89-7271-4904-9163-6a9bfec49a12.mp4
 
 ### Render Video
 
