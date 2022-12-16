@@ -1,6 +1,6 @@
 # Data
 
-This is a short documentation of sdfstudio's data format and it is organized as:
+This is a short documentation of SDF Studio's data format and it is organized as:
 
 - [Dataset format](#Dataset-format)
 - [Existing datasets](#Existing-dataset)
