@@ -156,14 +156,14 @@ The mask loss is usually helpful to seperate foreground object and background. H
 
 ## Eikonal loss
 
-Eikonal loss is used in all SDF-based method to regularize the SDF field except UniSurf because UniSurf use occupancy field. You could change the weight for eikonal loss as:
+Eikonal loss is used in all SDF-based method to regularize the SDF field except UniSurf because UniSurf uses occupancy field. You could change the weight of eikonal loss with the following command:
 ```
 --pipeline.model.eikonal-loss-mult 0.01
 ```
 
 ## Smoothness loss
 
-The smoothness enforce smoothness surface, it is used in UniSurf and can be changed with the following command:
+The smoothness loss enforces smoothness surface. It is used in UniSurf and the weight for the smoothness loss can be changed with the following command:
 ```
 --pipeline.model.smooth-loss-multi 0.01
 ```
@@ -183,8 +183,8 @@ The monocular normal consistency loss is proposed in MonoSDF which use a pretrai
 
 ## Multi-view photometric consistency
 
-Multi-view photometric consistency is proposed in Geo-NeuS, where for each ray, it find the intersection with the surface and use homography to warp patches from nearby views to target view and use normalized cross correaltion loss (NCC) for supervision. The weight for multi-view photometric consistency can be changed with the following command:
+Multi-view photometric consistency is proposed in Geo-NeuS to enforce multi-view geometry consistency. For each ray, it finds the intersection with the surface and uses homography to warp patches from source views to target view and uses normalized cross correaltion loss (NCC) for warped patches. The weight for multi-view photometric consistency can be changed with the following command:
 ```
 ns-train volsdf --pipeline.model.patch-size 11 --pipeline.model.patch-warp-loss-mult 0.1 --pipeline.model.topk 4
 ```
-where topk is number of nearby views that have smalleast NCC loss used for supervision. It is an approximate occlusion handling. 
+where topk is number of nearby views that have smalleast NCC error and only these patches with lowest error are used for supervision. It is an approximation of occlusion handling. 
