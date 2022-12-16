@@ -8,7 +8,7 @@ This is a short documentation of SDFStudio, organized as follows:
 
 # Methods
 
-SDF Studio implements multiple neural implicit surface reconstruction methods in one common framework. More specifically, SDF Studio builds on UniSurf, VolSDF, and NeuS. The main difference of these methods is in how the points along the ray are sampled and how the SDF is used during volume rendering. For more details of these methods, please check the corresponding paper. Here we explain these methods shortly and provide examples on how to use them in the following.
+SDF Studio implements multiple neural implicit surface reconstruction methods in one common framework. More specifically, SDF Studio builds on [UniSurf](https://github.com/autonomousvision/unisurf), [VolSDF](https://github.com/lioryariv/volsdf), and [NeuS](https://github.com/Totoro97/NeuS). The main difference of these methods is in how the points along the ray are sampled and how the SDF is used during volume rendering. For more details of these methods, please check the corresponding paper. Here we explain these methods shortly and provide examples on how to use them in the following.
 
 ## UniSurf
 
@@ -31,7 +31,7 @@ ns-train neus --pipeline.model.sdf-field.inside-outside False sdfstudio-data --d
 ```
 
 ## MonoSDF
-MonoSDF is built on top of VolSDF and proposes to use monocualr depth and normal cues as additional supervision. This is particularly helpful in sparse settings (little views) and in indoor scenes. To train a MonoSDF model in an indoor scene, run the following command:
+[MonoSDF](https://github.com/autonomousvision/monosdf) is built on top of VolSDF and proposes to use monocualr depth and normal cues as additional supervision. This is particularly helpful in sparse settings (little views) and in indoor scenes. To train a MonoSDF model in an indoor scene, run the following command:
 ```
 ns-train monosdf --pipeline.model.sdf-field.inside-outside True sdfstudio-data --data data/sdfstudio-demo-data/replica-room0 --include-mono-prior True
 
@@ -50,7 +50,7 @@ ns-train mono-neus --pipeline.model.sdf-field.inside-outside True sdfstudio-data
 ```
 
 ## Geo-NeuS
-Geo-NeuS is built on top of NeuS and propose an multi-view photometric consistency loss for optimization. To train a Geo-NeuS model on the DTU dataset, run the following command:
+[Geo-NeuS](https://github.com/GhiXu/Geo-Neus) is built on top of NeuS and propose an multi-view photometric consistency loss for optimization. To train a Geo-NeuS model on the DTU dataset, run the following command:
 ```
 ns-train geo-neus --pipeline.model.sdf-field.inside-outside False sdfstudio-data -data data/dtu/scan24 --load-pairs True
 ```
@@ -75,14 +75,14 @@ ns-train neus-acc --pipeline.model.sdf-field.inside-outside False sdfstudio-data
 ```
 
 ## NeuS-facto
-NeuS-facto is inspired by nerfacto in nerfstudio, where a proposal network proposed in mip-NeRF360 is used for sampling points along the ray. We apply the idea to NeuS to speed up the sampling process and reduce the number of samples for each ray. To train a NeuS-facto model on the DTU dataset, run the following command:
+NeuS-facto is inspired by [nerfacto](https://github.com/nerfstudio-project/nerfstudio) in nerfstudio, where a proposal network proposed in [mip-NeRF360](https://jonbarron.info/mipnerf360/) is used for sampling points along the ray. We apply the idea to NeuS to speed up the sampling process and reduce the number of samples for each ray. To train a NeuS-facto model on the DTU dataset, run the following command:
 ```
 ns-train neus-facto --pipeline.model.sdf-field.inside-outside False sdfstudio-data -data data/dtu/scan65
 ```
 
 ## NeuralReconW
 
-NeuralReconW is specifically designed for heritage scenes and hence can only be applied to these scenes. Specifically, it uses sparse point cloud from colmap to create an coarse occupancy grid. Then for each ray, it first find the intersection with the occupancy grid to determine near and far for the ray. Then it samples points uniformly within the near and far range. Further, it also use a surface guided sampling, where it first find the intersection of the surface and only sample points in a small range around the surface. To speed up the sampling, it use a high-resolution fine-graind grid to cache sdf field so that it don't need to query the network for surface intersection. The sdf cache will be updated during training (e.g. every 5K iterations). To train a NeuralReconW model on the DTU dataset, run the following command:
+[NeuralReconW](https://github.com/zju3dv/NeuralRecon-W) is specifically designed for heritage scenes and hence can only be applied to these scenes. Specifically, it uses sparse point cloud from colmap to create an coarse occupancy grid. Then for each ray, it first find the intersection with the occupancy grid to determine near and far for the ray. Then it samples points uniformly within the near and far range. Further, it also use a surface guided sampling, where it first find the intersection of the surface and only sample points in a small range around the surface. To speed up the sampling, it use a high-resolution fine-graind grid to cache sdf field so that it don't need to query the network for surface intersection. The sdf cache will be updated during training (e.g. every 5K iterations). To train a NeuralReconW model on the DTU dataset, run the following command:
 
 ```
 ns-train neusW --pipeline.model.sdf-field.inside-outside False heritage-data --data data/heritage/brandenburg_gate
@@ -92,7 +92,7 @@ ns-train neusW --pipeline.model.sdf-field.inside-outside False heritage-data --d
 
 The neural representation contains two parts, a geometric network and a color network. The geometric network takes a 3D position as input and outputs a sdf value, a normal vector, and a geometric feautre vector. The color network takes a 3D position and view direction together with the normal vector and the geometric feautre vector from geometric network and as inputs and outputs a RGB color vector.
 
-We support three representations for the geometric network: MLPs, Multi-res feature grids, and Tri-plane. We now explain the detailes and how to use it in the following:
+We support three representations for the geometric network: MLPs, [Multi-Res. Feature Grids](https://github.com/NVlabs/instant-ngp), and [Tri-plane](https://github.com/apchenstu/TensoRF). We now explain the details and how to use it in the following:
 
 ## MLPs
 
