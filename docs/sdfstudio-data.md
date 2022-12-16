@@ -1,10 +1,10 @@
 # Data Format and Datasets
 
-This is a short documentation of SDF Studio's data format and datasets, organized as follows:
+This is a short documentation of SDFStudio's data format and datasets, organized as follows:
 
 - [Data format](#Dataset-format)
 - [Existing datasets](#Existing-dataset)
-- [Customize your own dataset](#Custom-dataset)
+- [Customize your own dataset](#Customize-your-own-dataset)
 
 # Data Format
 We use scan65 of the DTU dataset to show how SDF Studio's data structures are organized:
@@ -24,7 +24,7 @@ The json file (meta_data.json) stores meta data of the scene and has the followi
     "height": 384,              # height of the images
     "width": 384,               # width of the images
     "has_mono_prior": true,     # use monocular cues or not
-    "pairs": "paris.txt",       # pairs file used for multi-view photometric consistency loss
+    "pairs": "pairs.txt",       # pairs file used for multi-view photometric consistency loss
     "worldtogt": [[ 1, 0, 0, 0], # world to gt transformation (useful for evauation)
                   [ 0, 1, 0, 0],
                   [ 0, 0, 1, 0],
@@ -76,7 +76,7 @@ The file `pairs.txt` is used for the multi-view photometric consistency loss and
 ```
 # Existing datasets
 
-We adapted the datasets used in MonoSDF to the SDF Studio format. They can be downloaded as follows:
+We adapted the datasets used in MonoSDF to the SDFStudio format. They can be downloaded as follows:
 ```
 ns-download-data sdfstudio --dataset-name DATASET_NAME
 ```
@@ -91,7 +91,7 @@ ns-download-data sdfstudio --dataset-name heritage
 
 # Customize your own dataset
 
-You can also implement your own data parser to use any other dataset or convert your own dataset to SDF Studio's data format. Here, we provide an example for converting the ScanNet dataset to SDF Studio's data format.
+You can implement your own data parser to use your own dataset or convert your dataset to SDFStudio's data format. Here, we provide an example for converting the ScanNet dataset to SDF Studio's data format.
 ```bash
 python scripts/datasets/process_scannet_to_sdfstudio.py --input_path /your_path/datasets/scannet/scene0050_00 --output_path data/custom/scannet_scene0050_00
 ```
