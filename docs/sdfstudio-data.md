@@ -1,13 +1,13 @@
-# Data
+# Data Format and Datasets
 
-This is a short documentation of SDF Studio's data format, organized as follows:
+This is a short documentation of SDF Studio's data format and datasets, organized as follows:
 
-- [Dataset format](#Dataset-format)
+- [Data format](#Dataset-format)
 - [Existing datasets](#Existing-dataset)
 - [Customize your own dataset](#Custom-dataset)
 
-# Dataset format
-We use scan65 of the DTU dataset to show how sdfstudio's data are organized. It looks like the following:
+# Data Format
+We use scan65 of the DTU dataset to show how SDF Studio's data structures are organized:
 ```bash
 └── scan65
   └── meta_data.json
@@ -17,15 +17,15 @@ We use scan65 of the DTU dataset to show how sdfstudio's data are organized. It 
   ├── 000000_depth.npy
   ├── .....
 ```
-The json file (meta_data.json) stores meta data of the scene, it has the following format:
+The json file (meta_data.json) stores meta data of the scene and has the following format:
 ```yaml
 {
-    "camera_model": "OPENCV",   # camera model, currently only opencv is supported
+    "camera_model": "OPENCV",   # camera model (currently only OpenCV is supported)
     "height": 384,              # height of the images
     "width": 384,               # width of the images
-    "has_mono_prior": true,     # contains monocualr prior or not
+    "has_mono_prior": true,     # use monocular cues or not
     "pairs": "paris.txt",       # pairs file used for multi-view photometric consistency loss
-    "worldtogt": [[ 1, 0, 0, 0], # world to gt transformation, it's usefule for evauation
+    "worldtogt": [[ 1, 0, 0, 0], # world to gt transformation (useful for evauation)
                   [ 0, 1, 0, 0],
                   [ 0, 0, 1, 0],
                   [ 0, 0, 0, 1]],
@@ -39,12 +39,12 @@ The json file (meta_data.json) stores meta data of the scene, it has the followi
         # collider_type can be "near_far", "box", "sphere", 
         # it indicates how do we determine the near and far for each ray 
         # 1. near_far means we use the same near and far value for each ray
-        # 2. box means we compute the intersection with bbox 
-        # 3. sphere means we compute the intersection with sphere
+        # 2. box means we compute the intersection with the bounding box 
+        # 3. sphere means we compute the intersection with the sphere
     },
     "frames": [   # this contains information for each image
         {
-            # note all paths are relateive path
+            # note that all paths are relateive path
             # path of rgb image
             "rgb_path": "000000_rgb.png",   
             # camera to world transform
@@ -52,7 +52,7 @@ The json file (meta_data.json) stores meta data of the scene, it has the followi
                            [0.007479910273104906, 0.9994929432868958, -0.03095100075006485, 0.07803472131490707],
                            [0.2419387847185135, 0.028223417699337006, 0.9698809385299683, -2.6397712230682373],
                            [0.0, 0.0, 0.0, 1.0 ]],
-            # intrinsic of current imaga
+            # intrinsic of current image
             "intrinsics": [[925.5457763671875, -7.8512319305446e-05, 199.4256591796875, 0.0],
                            [0.0, 922.6160278320312, 198.10269165039062, 0.0 ],
                            [0.0, 0.0, 1.0, 0.0 ],
@@ -67,7 +67,7 @@ The json file (meta_data.json) stores meta data of the scene, it has the followi
 }
 ```
 
-The `paris.txt` is used for multi-view photometric consistency loss. It has the following format:
+The file `pairs.txt` is used for the multi-view photometric consistency loss and has the following format:
 ```bash
 # ref image, source image 1, source image 2, ..., source image N
 000000.png 000032.png 000023.png 000028.png 000031.png 000029.png 000030.png 000024.png 000002.png 000015.png 000025.png ...
@@ -76,28 +76,27 @@ The `paris.txt` is used for multi-view photometric consistency loss. It has the 
 ```
 # Existing datasets
 
-We adapted the dataset used in MonoSDF to sdfstudio format and it can be downloaded with
+We adapted the datasets used in MonoSDF to the SDF Studio format. They can be downloaded as follows:
 ```
 ns-download-data sdfstudio --dataset-name DATASET_NAME
 ```
-The `DATASET_NAME` can be chosen from `sdfstudio-demo-data, dtu, replica, scannet, tanks-and-temple, tanks-and-temple-highres, all`. Use `all` if you want to download all the dataset.
+Here, `DATASET_NAME` can be any of the following: `sdfstudio-demo-data, dtu, replica, scannet, tanks-and-temple, tanks-and-temple-highres, all`. Use `all` if you want to download all datasets.
 
-Note that for the DTU dataset, you should use `--pipeline.model.sdf-field.inside-outside False` and for the indoor dataset you should use `--pipeline.model.sdf-field.inside-outside True` druing training.
+Note that for the DTU dataset, you should use `--pipeline.model.sdf-field.inside-outside False` and for the indoor datasets (Replica, ScanNet, Tanks and Temples) you should use `--pipeline.model.sdf-field.inside-outside True` during training.
 
-We also provide the preprocessed heritage data from neuralreconW and it can be downloaded with
+We also provide the preprocessed heritage data from NeuralReconW which can be downloaded as follows:
 ```
 ns-download-data sdfstudio --dataset-name heritage
 ```
 
 # Customize your own dataset
 
-You could implement your own data-parser to use custom dataset or convert your dataset to sdfstudio's data format as shown above. Here we provide an example of converting scannet dataset to sdfstudio's data format. Please change the path accordingly.
+You can also implement your own data parser to use any other dataset or convert your own dataset to SDF Studio's data format. Here, we provide an example for converting the ScanNet dataset to SDF Studio's data format.
 ```bash
-python scripts/datasets/process_scannet_to_sdfstudio.py --input_path /home/yuzh/Projects/datasets/scannet/scene0050_00 --output_path data/custom/scannet_scene0050_00
+python scripts/datasets/process_scannet_to_sdfstudio.py --input_path /your_path/datasets/scannet/scene0050_00 --output_path data/custom/scannet_scene0050_00
 ```
 
-Next, you can extract monocular depths and normals (please install [omnidata model](https://github.com/EPFL-VILAB/omnidata) before running the command):
+Next, you can extract monocular depth and normal cues if you like to use those during optimization. First, install the [Omnidata Model](https://github.com/EPFL-VILAB/omnidata). Next, run the following command:
 ```bash
-python scripts/datasets/extract_monocular_cues.py --task normal --img_path data/custom/scannet_scene0050_00/ --output_path data/custom/scannet_scene0050_00 --omnidata_path YOUR_OMNIDATA_PATH --pretrained_models PRETRAINED_MODELS
 python scripts/datasets/extract_monocular_cues.py --task normal --img_path data/custom/scannet_scene0050_00/ --output_path data/custom/scannet_scene0050_00 --omnidata_path YOUR_OMNIDATA_PATH --pretrained_models PRETRAINED_MODELS
 ```
