@@ -31,58 +31,58 @@ ns-train neus --pipeline.model.sdf-field.inside-outside False sdfstudio-data --d
 ```
 
 ## MonoSDF
-[MonoSDF](https://github.com/autonomousvision/monosdf) is built on top of VolSDF and proposes to use monocular depth and normal cues as additional supervision. This is particularly helpful in sparse settings (little views) and in indoor scenes. To train a MonoSDF model in an indoor scene, run the following command:
+[MonoSDF](https://github.com/autonomousvision/monosdf) builds on VolSDF and proposes to use monocular depth and normal cues as additional supervision. This is particularly helpful in sparse settings (little views) and in indoor scenes. To train a MonoSDF model for an indoor scene, run the following command:
 ```
 ns-train monosdf --pipeline.model.sdf-field.inside-outside True sdfstudio-data --data data/sdfstudio-demo-data/replica-room0 --include-mono-prior True
 
 ```
 
 ## Mono-UniSurf
-Similar to MonoSDF, Mono-UniSurf use monocular prior as additional supervision for UniSurf. To train a Mono-UniSurf model, run the following command:
+Similar to MonoSDF, Mono-UniSurf uses monocular depth and normal cues as additional supervision for UniSurf. To train a Mono-UniSurf model, run the following command:
 ```
 ns-train mono-unisurf --pipeline.model.sdf-field.inside-outside True sdfstudio-data --data data/sdfstudio-demo-data/replica-room0 --include-mono-prior True
 ```
 
 ## Mono-NeuS
-Similar to monosdf, mono-neus use monocular prior as additional supervision for NeuS. To train a Mono-NeuS model, run the following command:
+Similar to MonoSDF, Mono-NeuS uses monocular depth and normal cues as additional supervision for NeuS. To train a Mono-NeuS model, run the following command:
 ```
 ns-train mono-neus --pipeline.model.sdf-field.inside-outside True sdfstudio-data --data data/sdfstudio-demo-data/replica-room0 --include-mono-prior True
 ```
 
 ## Geo-NeuS
-[Geo-NeuS](https://github.com/GhiXu/Geo-Neus) is built on top of NeuS and propose an multi-view photometric consistency loss for optimization. To train a Geo-NeuS model on the DTU dataset, run the following command:
+[Geo-NeuS](https://github.com/GhiXu/Geo-Neus) builds on NeuS and proposes a multi-view photometric consistency loss. To train a Geo-NeuS model on the DTU dataset, run the following command:
 ```
 ns-train geo-neus --pipeline.model.sdf-field.inside-outside False sdfstudio-data -data data/dtu/scan24 --load-pairs True
 ```
 
 ## Geo-UniSurf
-The idea of geo-neus can also applied to UniSurf, which we call Geo-UniSurf. To train a Geo-UniSurf model on the DTU dataset, run the following command:
+The idea of Geo-NeuS can also applied to UniSurf, which we call Geo-UniSurf. To train a Geo-UniSurf model on the DTU dataset, run the following command:
 ```
 ns-train geo-unisurf --pipeline.model.sdf-field.inside-outside False sdfstudio-data -data data/dtu/scan24 --load-pairs True
 ```
 
 ## Geo-VolSDF
-Same here, we can apply the idea of Geo-NeuS to VolSDF, which we call Geo-VolSDF. To train a Geo-UniSurf model on the DTU dataset, run the following command:
+Similarly, we can apply the idea of Geo-NeuS to VolSDF, which we call Geo-VolSDF. To train a Geo-VolSDF model on the DTU dataset, run the following command:
 ```
 ns-train geo-volsdf --pipeline.model.sdf-field.inside-outside False sdfstudio-data -data data/dtu/scan24 --load-pairs True
 ```
 
 ## NeuS-acc
-NeuS-acc maintains an occupancy grid for empty space skipping during points sampling along the ray. It significantly reduces the number of samples used in training as thus speed up training. To train a NeuS-acc model on the DTU dataset, run the following command:
+NeuS-acc maintains an occupancy grid for empty space skipping during point sampling along the ray. This significantly reduces the number of samples required during training and hence speeds up training. To train a NeuS-acc model on the DTU dataset, run the following command:
 ```
 ns-train neus-acc --pipeline.model.sdf-field.inside-outside False sdfstudio-data -data data/dtu/scan65
 
 ```
 
 ## NeuS-facto
-NeuS-facto is inspired by [nerfacto](https://github.com/nerfstudio-project/nerfstudio) in nerfstudio, where a proposal network proposed in [mip-NeRF360](https://jonbarron.info/mipnerf360/) is used for sampling points along the ray. We apply the idea to NeuS to speed up the sampling process and reduce the number of samples for each ray. To train a NeuS-facto model on the DTU dataset, run the following command:
+NeuS-facto is inspired by [nerfacto](https://github.com/nerfstudio-project/nerfstudio) in nerfstudio, where the proposal network from [mip-NeRF360](https://jonbarron.info/mipnerf360/) is used for sampling points along the ray. We apply this idea to NeuS to speed up the sampling process and reduce the number of samples for each ray. To train a NeuS-facto model on the DTU dataset, run the following command:
 ```
 ns-train neus-facto --pipeline.model.sdf-field.inside-outside False sdfstudio-data -data data/dtu/scan65
 ```
 
 ## NeuralReconW
 
-[NeuralReconW](https://github.com/zju3dv/NeuralRecon-W) is specifically designed for heritage scenes and hence can only be applied to these scenes. Specifically, it uses sparse point cloud from colmap to create an coarse occupancy grid. Then for each ray, it first find the intersection with the occupancy grid to determine near and far for the ray. Then it samples points uniformly within the near and far range. Further, it also use a surface guided sampling, where it first find the intersection of the surface and only sample points in a small range around the surface. To speed up the sampling, it use a high-resolution fine-graind grid to cache sdf field so that it don't need to query the network for surface intersection. The sdf cache will be updated during training (e.g. every 5K iterations). To train a NeuralReconW model on the DTU dataset, run the following command:
+[NeuralReconW](https://github.com/zju3dv/NeuralRecon-W) is specifically designed for heritage scenes and hence can only be applied to these scenes. Specifically, it uses sparse point clouds from colmap to create a coarse occupancy grid. Using this occupancy grid, the near and far plane for each ray can be determined. Points are sampled uniformly along the ray within the near and far plane. Further, NeuralReconW also uses surface guided sampling, by sampling points in a small range around the predicted surface. To speed up sampling, it uses a high-resolution grid to cache the SDF field such that no network queries are required to find the surface intersection. The SDF cache is regularly updated during training (e.g. every 5K iterations). To train a NeuralReconW model on the DTU dataset, run the following command:
 
 ```
 ns-train neusW --pipeline.model.sdf-field.inside-outside False heritage-data --data data/heritage/brandenburg_gate
