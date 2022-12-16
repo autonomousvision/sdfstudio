@@ -31,20 +31,20 @@ ns-train neus --pipeline.model.sdf-field.inside-outside False sdfstudio-data --d
 ```
 
 ## MonoSDF
-MonoSDF is built on top of VolSDF and proposes to use monocualr depth and normal cues as additional supervision. This is particularly helpful in sparse settings (little views) and in indoor scenes. To train a MonoSDF model in an indoor scene, run the following command:
+MonoSDF is built on top of VolSDF and proposes to use monocular depth and normal cues as additional supervision. This is particularly helpful in sparse settings (little views) and in indoor scenes. To train a MonoSDF model in an indoor scene, run the following command:
 ```
 ns-train monosdf --pipeline.model.sdf-field.inside-outside True sdfstudio-data --data data/sdfstudio-demo-data/replica-room0 --include-mono-prior True
 
 ```
 
 ## Mono-UniSurf
-Similar to monosdf, Mono-UniSurf use monocualr prior as additional supervision for UniSurf. To train a Mono-UniSurf model, run the following command:
+Similar to MonoSDF, Mono-UniSurf use monocular prior as additional supervision for UniSurf. To train a Mono-UniSurf model, run the following command:
 ```
 ns-train mono-unisurf --pipeline.model.sdf-field.inside-outside True sdfstudio-data --data data/sdfstudio-demo-data/replica-room0 --include-mono-prior True
 ```
 
 ## Mono-NeuS
-Similar to monosdf, mono-neus use monocualr prior as additional supervision for NeuS. To train a Mono-NeuS model, run the following command:
+Similar to monosdf, mono-neus use monocular prior as additional supervision for NeuS. To train a Mono-NeuS model, run the following command:
 ```
 ns-train mono-neus --pipeline.model.sdf-field.inside-outside True sdfstudio-data --data data/sdfstudio-demo-data/replica-room0 --include-mono-prior True
 ```
