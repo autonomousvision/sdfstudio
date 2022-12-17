@@ -82,7 +82,7 @@ ns-train neus-facto --pipeline.model.sdf-field.inside-outside False sdfstudio-da
 
 ## NeuralReconW
 
-[NeuralReconW](https://github.com/zju3dv/NeuralRecon-W) is specifically designed for heritage scenes and hence can only be applied to these scenes. Specifically, it uses sparse point clouds from colmap to create a coarse occupancy grid. Using this occupancy grid, the near and far plane for each ray can be determined. Points are sampled uniformly along the ray within the near and far plane. Further, NeuralReconW also uses surface guided sampling, by sampling points in a small range around the predicted surface. To speed up sampling, it uses a high-resolution grid to cache the SDF field such that no network queries are required to find the surface intersection. The SDF cache is regularly updated during training (e.g. every 5K iterations). To train a NeuralReconW model on the DTU dataset, run the following command:
+[NeuralReconW](https://github.com/zju3dv/NeuralRecon-W) is specifically designed for heritage scenes and hence can only be applied to these scenes. Specifically, it uses sparse point clouds from colmap to create a coarse occupancy grid. Using this occupancy grid, the near and far plane for each ray can be determined. Points are sampled uniformly along the ray within the near and far plane. Further, NeuralReconW also uses surface guided sampling, by sampling points in a small range around the predicted surface. To speed up sampling, it uses a high-resolution grid to cache the SDF field such that no network queries are required to find the surface intersection. The SDF cache is regularly updated during training (every 5K iterations). To train a NeuralReconW model on the DTU dataset, run the following command:
 
 ```
 ns-train neusW --pipeline.model.sdf-field.inside-outside False heritage-data --data data/heritage/brandenburg_gate
@@ -90,21 +90,21 @@ ns-train neusW --pipeline.model.sdf-field.inside-outside False heritage-data --d
 
 # Representations
 
-The neural representation contains two parts, a geometric network and a color network. The geometric network takes a 3D position as input and outputs a sdf value, a normal vector, and a geometric feautre vector. The color network takes a 3D position and view direction together with the normal vector and the geometric feautre vector from geometric network and as inputs and outputs a RGB color vector.
+The representation stores geometry and appearance. The geometric mapping takes a 3D position as input and outputs an SDF value, a normal vector, and a geometric feautre vector. The color mapping (implemented as an MLP) takes a 3D position and view direction together with the normal vector and the geometry feature vector from the geometry mapping as input and outputs an RGB color vector.
 
-We support three representations for the geometric network: MLPs, [Multi-Res. Feature Grids](https://github.com/NVlabs/instant-ngp), and [Tri-plane](https://github.com/apchenstu/TensoRF). We now explain the details and how to use it in the following:
+We support three representations for the geometric mapping: MLPs, Multi-Res. Feature Grids from [iNGP](https://github.com/NVlabs/instant-ngp), and Tri-plane from [TensoRF](https://github.com/apchenstu/TensoRF). We now explain these representations in more detail:
 
 ## MLPs
 
-The 3D position is encoded with positional encoding as in nerf and pass to a multi-layer perception network to prediction sdf, normal, and geometric feature. For example, to train VolSDF with a MLPs with 8 layers and 512 hiddin dimension, run the following command:
+The 3D position is encoded using a positional encoding as in NeRF and passed to a multi-layer perceptron (MLP) network to predict an SDF value, normal, and geometry feature. To train VolSDF with an MLP with 8 layers and 512 hidden dimensions, run the following command:
 
 ```
 ns-train volsdf --pipeline.model.sdf-field.use-grid-feature False --pipeline.model.sdf-field.use-grid-feature sdfstudio-data --data YOUR_DATA
 ```
 
-## Multi-res feature grids
+## Multi-res Feature Grids
 
-The 3D position is first mapped to a multi-resolution feature grids and use tri-linear interpolation to retreive the corresponding feature vector. The feature vector is used as input to a MLPs to prediction sdf, normal, and geometric feature. For example, to use a VolSDF model with Multi-Res Feature Grids representations with 2 layers and 256 hiddin dimension, run the following command:
+The 3D position is first mapped to a multi-resolution feature grid, using tri-linear interpolation to retreive the corresponding feature vector. This feature vector is then used as input to an MLP to predict SDF, normal, and geometry features. To train a VolSDF model with Multi-Res Feature Grid representation with 2 layers and 256 hidden dimensions, run the following command:
 
 ```
 ns-train volsdf --pipeline.model.sdf-field.use-grid-feature True --pipeline.model.sdf-field.encoding-type hash sdfstudio-data --data YOUR_DATA
@@ -112,79 +112,80 @@ ns-train volsdf --pipeline.model.sdf-field.use-grid-feature True --pipeline.mode
 
 ## Tri-plane
 
-The 3D position is first mapped to three orthogonal planes and use bi-linear interpolation to retreive feature vector for each plane and concat them as input the the MLPs. To use tri-plane representation on VolSDF, run the following command:
+The 3D position is first mapped to three orthogonal planes, using bi-linear interpolation to retreive a feature vector for each plane which are concatenated as as input to the MLP. To use a tri-plane representation on VolSDF, run the following command:
 
 ```
 ns-train volsdf --pipeline.model.sdf-field.use-grid-feature True  --pipeline.model.sdf-field.encoding-type tri-plane sdfstudio-data --data YOUR_DATA
 ```
 
-## Geometric initilaization
+## Geometry Initialization
 
-Good initialization is important to get good results. So we usually initialize the SDF as a sphere. For example, in the DTU dataset, we usually initialize the network with the following command: 
+Proper initialization is very important to obtain good results. By default, SDF Studio initializes the SDF as a sphere. For example, for the DTU dataset, you can initialize the network with the following command: 
 
 ```
 ns-train volsdf  --pipeline.model.sdf-field.geometric-init True --pipeline.model.sdf-field.bias 0.5 --pipeline.model.sdf-field.inside-outside False
 ```
 
-And in the indoor scene we use the initilization with the following command:
+For indoor scenes, please initialize the model using the following command:
 
 ```
 ns-train volsdf --pipeline.model.sdf-field.geometric-init True --pipeline.model.sdf-field.bias 0.8 --pipeline.model.sdf-field.inside-outside True
 ```
 
-Note that in the indoor scenes, cameras are inside the sphere so we set `inside-outside` to `True` such that the points inside the sphere will have positive SDF value and points outside the sphere will have negetive SDF value.
+Note that for indoor scenes the cameras are inside the sphere so we set `inside-outside` to `True` such that the points inside the sphere will have positive SDF values and points outside the sphere will have negative SDF values.
 
-## Color network
+## Color Network
 
-The color netwokr is a MLPs, similar to geometric network, it can be config with the following command:
+The color network is an MLPs, similar to the geometry MLP. It can be config using the following command:
 ```
 ns-train volsdf --pipeline.model.sdf-field.num-layers-color 2 --pipeline.model.sdf-field.hidden-dim-color 512
 ```
 
 # Supervision
 
-## RGB loss
+## RGB Loss
 
-We use L1 loss for the RGB loss to supervise the volume rendered color for each ray. It is always used for all models.
+We use the L1 loss for the RGB loss to supervise the volume rendered color at each ray. This is the default for all models.
 
-## Mask loss
+## Mask Loss
 
-The mask loss is usually helpful to seperate foreground object and background. However, it needs additonal inputs. For example, in neuralreconW, a segmentation network is used to predict the sky region and the sky segmentation is used as a label for mask loss. It is used by default if masks are provided in the dataset. You could change the weight for the mask loss with
+The (optional) mask loss can be helpful to seperate the foreground object from the background. However, it requires additional masks as inputs. For example, in NeuralReconW, a segmentation network can be used to predict the sky region and the sky segmentation can be used as a label for the mask loss. The mask loss is used by default if masks are provided in the dataset. You can change the weight for the mask loss via:
 ```
 --pipeline.model.fg-mask-loss-mult 0.001
 ```
 
-## Eikonal loss
+## Eikonal Loss
 
-Eikonal loss is used in all SDF-based method to regularize the SDF field except UniSurf because UniSurf uses occupancy field. You could change the weight of eikonal loss with the following command:
+The Eikonal loss is used for all SDF-based methods to regularize the SDF field to properly represent SDFs. It is not used for UniSurf which uses an occupancy field. You can change the weight of eikonal loss with the following command:
 ```
 --pipeline.model.eikonal-loss-mult 0.01
 ```
 
-## Smoothness loss
+## Smoothness Loss
 
-The smoothness loss enforces smoothness surface. It is used in UniSurf and the weight for the smoothness loss can be changed with the following command:
+The smoothness loss encourages smooth surfaces. This loss is used in UniSurf and encourages the normal of a surface point and the normal of a point sampled in its neighborhood to be similar. The weight for the smoothness loss can be changed with the following command:
 ```
 --pipeline.model.smooth-loss-multi 0.01
 ```
 
-## Monocular depth consistency
+## Monocular Depth Consistency
 
-The monocular depth consistency loss is proposed in MonoSDF which use a pretrained monocular depth network to provided priors during training. This is particularly helpful in sparse settings (little views) and in indoor scenes. The weight for monocular depth consistency loss can be changed with the following command:
+The monocular depth consistency loss is proposed in MonoSDF and uses depth predicted by a pretrained monocular depth network as additional constraint per image. This is particularly helpful in sparse settings (little views) and in indoor scenes. The weight for monocular depth consistency loss can be changed with the following command:
 ```
 --pipeline.model.mono-depth-loss-mult 0.1
 ```
 
-## Monocular normal consistency
-The monocular normal consistency loss is proposed in MonoSDF which use a pretrained monocular normal network to provided priors during training. This is particularly helpful in sparse settings (little views) and in indoor scenes. The weight for monocular normal consistency loss can be changed with the following command:
+## Monocular Normal Consistency
+
+The monocular normal consistency loss is proposed in MonoSDF and uses normals predicted by a pretrained monocular normal network as additional constraint during training. This is particularly helpful in sparse settings (little views) and in indoor scenes. The weight for monocular normal consistency loss can be changed with the following command:
 ```
 --pipeline.model.mono-normal-loss-mult 0.05
 ```
 
-## Multi-view photometric consistency
+## Multi-view Photometric Consistency
 
-Multi-view photometric consistency is proposed in Geo-NeuS to enforce multi-view geometry consistency. For each ray, it finds the intersection with the surface and uses homography to warp patches from source views to target view and uses normalized cross correaltion loss (NCC) for warped patches. The weight for multi-view photometric consistency can be changed with the following command:
+Encouraging multi-view photometric consistency is proposed in Geo-NeuS. For each ray, we seek the intersection with the surface and use the corresponding homography to warp patches from the source views to the target views and comparing those patches using normalized cross correlation (NCC). The weight for the multi-view photometric consistency loss can be changed with the following command:
 ```
 ns-train volsdf --pipeline.model.patch-size 11 --pipeline.model.patch-warp-loss-mult 0.1 --pipeline.model.topk 4
 ```
-where topk is number of nearby views that have smalleast NCC error and only these patches with lowest error are used for supervision. It is an approximation of occlusion handling. 
+where topk denotes the number of nearby views which have the smallest NCC error. Only those patchesare used for supervision, effectively ignoring outliers, e.g., due to occlusion.
