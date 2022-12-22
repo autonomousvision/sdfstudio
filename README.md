@@ -7,13 +7,14 @@
 
 # About
 
-SDFStudio is a unified and modular framework for neural implicit surface reconstruction, built on top of the awesome nerfstudio project. We provide a unified implementation of three major implicit surface reconstruction methods: UniSurf, VolSDF, and NeuS. SDFStudio also supports various scene representions, such as MLPs, Tri-plane, and Multi-res. feature grids, and multiple point sampling strategies such as surface-guided sampling as in UniSurf, and Voxel-surface guided sampling from NeuralReconW. It further integrates recent advances in the area such as the utillization of monocular cues (MonoSDF), geometry regularization (UniSurf) and multi-view consistency (Geo-NeuS). Thanks to the unified and modular implementation, SDFStudio makes it easy to transfer ideas from one method to another. For example, Mono-NeuS applies the idea from MonoSDF to NeuS, and Geo-VolSDF applies the idea from Geo-NeuS to VolSDF. 
+SDFStudio is a unified and modular framework for neural implicit surface reconstruction, built on top of the awesome nerfstudio project. We provide a unified implementation of three major implicit surface reconstruction methods: UniSurf, VolSDF, and NeuS. SDFStudio also supports various scene representions, such as MLPs, Tri-plane, and Multi-res. feature grids, and multiple point sampling strategies such as surface-guided sampling as in UniSurf, and Voxel-surface guided sampling from NeuralReconW. It further integrates recent advances in the area such as the utillization of monocular cues (MonoSDF), geometry regularization (UniSurf) and multi-view consistency (Geo-NeuS). Thanks to the unified and modular implementation, SDFStudio makes it easy to transfer ideas from one method to another. For example, Mono-NeuS applies the idea from MonoSDF to NeuS, and Geo-VolSDF applies the idea from Geo-NeuS to VolSDF.
 
 # Quickstart
 
 ## 1. Installation: Setup the environment
 
 SDFStudio is built on top of [nerfstudio](https://github.com/nerfstudio-project/nerfstudio). If you have already installed the nerfstudio environment, you can skip the following steps.
+
 ### Prerequisites
 
 CUDA must be installed on the system. This library has been tested with version 11.3. You can find more information about installing CUDA [here](https://docs.nvidia.com/cuda/cuda-quick-start-guide/index.html).
@@ -44,6 +45,8 @@ git clone https://github.com/autonomousvision/sdfstudio.git
 cd sdfstudio
 pip install --upgrade pip setuptools
 pip install -e .
+# install tab completion
+ns-install-cli
 ```
 
 ## 2. Train your first model
@@ -67,7 +70,7 @@ If everything works, you should see the following training progress:
     <img width="800" alt="image" src="media/training-process.png">
 </p>
 
-Navigating to the link at the end of the terminal will load the webviewer (developled by nerfstudio). If you are running on a remote machine, you will need to port forward the websocket port (defaults to 7007). With an RTX3090 GPU, it takes ~15 mins for 20K iterations but you can already see reasonable reconstruction results after 2K iterations in the webviewer. 
+Navigating to the link at the end of the terminal will load the webviewer (developled by nerfstudio). If you are running on a remote machine, you will need to port forward the websocket port (defaults to 7007). With an RTX3090 GPU, it takes ~15 mins for 20K iterations but you can already see reasonable reconstruction results after 2K iterations in the webviewer.
 
 <p align="center">
     <img width="800" alt="image" src="media/viewer_screenshot.png">
@@ -88,14 +91,17 @@ Note that this will automatically resume training. If you do not want to resume 
 Once you have a trained model you can export mesh and render the mesh.
 
 ### Extract Mesh
+
 ```bash
 ns-extract-mesh --load-config outputs/neus-facto-dtu65/neus-facto/XXX/config.yml --output-path meshes/neus-facto-dtu65.ply
 ```
 
 ### Render Mesh
+
 ```
 ns-render-mesh --meshfile meshes/neus-facto-dtu65.ply --traj interpolate --data.data data/sdfstudio-demo-data/dtu-scan65 --output-path renders/neus-facto-dtu65.mp4
 ```
+
 You will get the following video if everything works properly.
 
 https://user-images.githubusercontent.com/13434986/207892086-dd6cae89-7271-4904-9163-6a9bfec49a12.mp4
@@ -145,7 +151,6 @@ Nerfstudio supports three different methods to track training progress, using th
 
 Please refer to the [datasets](docs/sdfstudio-data.md) and [data format](https://github.com/autonomousvision/sdfstudio/blob/master/docs/sdfstudio-data.md#Dataset-format) documentation if you like to use custom datasets.
 
-
 # Built On
 
 <a href="https://github.com/nerfstudio-project/nerfstudio">
@@ -159,7 +164,7 @@ Please refer to the [datasets](docs/sdfstudio-data.md) and [data format](https:/
 <!-- /pypi-strip -->
 </a>
 
-- A collaboration friendly studio for NeRFs 
+- A collaboration friendly studio for NeRFs
 - Developed by [nerfstudio team](https://github.com/nerfstudio-project)
 
 <a href="https://github.com/brentyi/tyro">
@@ -197,7 +202,7 @@ If you use this library or find the documentation useful for your research, plea
 ```bibtex
 @misc{Yu2022SDFStudio,
     author    = {Zehao Yu, Anpei Chen, Bozidar Antic, Songyou Peng, Apratim Bhattacharyya,
-                 Michael Niemeyer, Siyu Tang Torsten Sattler and Andreas Geiger},
+                 Michael Niemeyer, Siyu Tang, Torsten Sattler, and Andreas Geiger},
     title     = {SDFStudio: A Unified Framework for Surface Reconstruction},
     year      = {2022},
     url       = {https://github.com/autonomousvision/sdfstudio},
