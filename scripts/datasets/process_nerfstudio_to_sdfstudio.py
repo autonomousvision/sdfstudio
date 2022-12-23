@@ -24,6 +24,7 @@ def main():
     parser.set_defaults(output_path="NONE")
 
     parser.add_argument("--type", dest="type", default="colmap", choices=["colmap", "polycam"])
+    parser.add_argument("--indoor", action="store_true")
 
     args = parser.parse_args()
 
@@ -45,15 +46,13 @@ def main():
         fl_x = camera_parameters["fl_x"]
         fl_y = camera_parameters["fl_y"]
     else:
-        cx = 0
-        cy = 0
-        fl_x = 0
-        fl_y = 0
+        cx = []
+        cy = []
+        fl_x = []
+        fl_y = []
 
     camera_parameters = camera_parameters["frames"]
     num_frames = len(camera_parameters)
-
-    camera_intrinsic = np.array([[fl_x, 0, cx], [0, fl_y, cy], [0, 0, 1]])
 
     # load poses
     poses = []
@@ -63,10 +62,10 @@ def main():
     for camera in camera_parameters:
         if POLYCAM:
             # average frames into single intrinsic
-            cx += camera["cx"]
-            cy += camera["cy"]
-            fl_x += camera["fl_x"]
-            fl_y += camera["fl_y"]
+            cx.append(camera["cx"])
+            cy.append(camera["cy"])
+            fl_x.append(camera["fl_x"])
+            fl_y.append(camera["fl_y"])
 
         # OpenGL/Blender convention, needs to change to COLMAP/OpenCV convention
         # https://docs.nerf.studio/en/latest/quickstart/data_conventions.html
@@ -83,30 +82,33 @@ def main():
 
     if POLYCAM:
         # intrinsics
-        cx /= num_frames
-        cy /= num_frames
-        fl_x /= num_frames
-        fl_y /= num_frames
-
-    camera_intrinsic = np.array([[fl_x, 0, cx], [0, fl_y, cy], [0, 0, 1]])
+        camera_intrinsics = []
+        for idx in range(len(cx)):
+            camera_intrinsics.append(np.array([[fl_x[idx], 0, cx[idx]], [0, fl_y[idx], cy[idx]], [0, 0, 1]]))
+    else:
+        camera_intrinsics = np.array([[fl_x, 0, cx], [0, fl_y, cy], [0, 0, 1]])
 
     # deal with invalid poses
     valid_poses = np.isfinite(poses).all(axis=2).all(axis=1)
     min_vertices = poses[:, :3, 3][valid_poses].min(axis=0)
     max_vertices = poses[:, :3, 3][valid_poses].max(axis=0)
 
-    center = (min_vertices + max_vertices) / 2.0
-    scale = 2.0 / (np.max(max_vertices - min_vertices) + 3.0)
+    # camera pose normalization only used for indoor scenes
+    if args.indoor:
+        center = (min_vertices + max_vertices) / 2.0
+        scale = 2.0 / (np.max(max_vertices - min_vertices) + 3.0)
 
-    # we should normalize pose to unit cube
-    poses[:, :3, 3] -= center
-    poses[:, :3, 3] *= scale
+        # we should normalize pose to unit cube
+        poses[:, :3, 3] -= center
+        poses[:, :3, 3] *= scale
 
-    # inverse normalization
-    scale_mat = np.eye(4).astype(np.float32)
-    scale_mat[:3, 3] -= center
-    scale_mat[:3] *= scale
-    scale_mat = np.linalg.inv(scale_mat)
+        # inverse normalization
+        scale_mat = np.eye(4).astype(np.float32)
+        scale_mat[:3, 3] -= center
+        scale_mat[:3] *= scale
+        scale_mat = np.linalg.inv(scale_mat)
+    else:
+        scale_mat = np.eye(4).astype(np.float32)
 
     # copy image
     sample_img = cv2.imread(str(image_paths[0]))
@@ -127,13 +129,20 @@ def main():
     offset_x = (W - target_crop) * 0.5
     offset_y = (H - target_crop) * 0.5
 
-    camera_intrinsic[0, 2] -= offset_x
-    camera_intrinsic[1, 2] -= offset_y
-    # resize from min_dim x min_dim -> to 384 x 384
-    resize_factor = target_size / target_crop
-    camera_intrinsic[:2, :] *= resize_factor
+    if POLYCAM:
+        for idx in range(len(camera_intrinsics)):
+            camera_intrinsics[idx][0, 2] -= offset_x
+            camera_intrinsics[idx][1, 2] -= offset_y
+            resize_factor = target_size / target_crop
+            camera_intrinsics[idx][:2, :] *= resize_factor
+    else:
+        camera_intrinsics[0, 2] -= offset_x
+        camera_intrinsics[1, 2] -= offset_y
+        # resize from min_dim x min_dim -> to 384 x 384
+        resize_factor = target_size / target_crop
+        camera_intrinsics[:2, :] *= resize_factor
 
-    K = camera_intrinsic
+    K = camera_intrinsics
 
     frames = []
     out_index = 0
@@ -150,7 +159,7 @@ def main():
         frame = {
             "rgb_path": rgb_path,
             "camtoworld": pose.tolist(),
-            "intrinsics": K.tolist(),
+            "intrinsics": K[idx].tolist() if isinstance(K, list) else K.tolist(),
             "mono_depth_path": rgb_path.replace("_rgb.png", "_depth.npy"),
             "mono_normal_path": rgb_path.replace("_rgb.png", "_normal.npy"),
         }
