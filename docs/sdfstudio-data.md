@@ -123,6 +123,21 @@ We also provide the preprocessed heritage data from NeuralReconW which can be do
 ns-download-data sdfstudio --dataset-name heritage
 ```
 
+## RGBD data
+
+SDFStudio also supports RGB-D data to obtain high-quality 3D reconstruction. The [synthetic rgbd data](https://github.com/dazinovic/neural-rgbd-surface-reconstruction) can be downloaded as follows
+
+```
+ns-download-data sdfstudio --dataset-name neural-rgbd-data
+```
+
+Then run the following command to convert the downloaded neural-rgbd dataset to SDFStudio format:
+
+```bash
+# kitchen scene for example, replca the scene path to convert other scenes
+python scripts/datasets/process_neuralrgbd_to_sdfstudio.py --input_path data/neural-rgbd-data/kitchen/ --output_path data/neural_rgbd/kitchen_sensor_depth --type sensor_depth
+```
+
 # Customize your own dataset
 
 You can implement your own data parser to use your own dataset or convert your dataset to SDFStudio's data format. Here, we provide an example for converting the ScanNet dataset to SDF Studio's data format.

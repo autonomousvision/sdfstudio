@@ -90,6 +90,20 @@ def get_depths_and_normals(image_idx: int, depths, normals):
     return {"depth": depth, "normal": normal}
 
 
+def get_sensor_depths(image_idx: int, sensor_depths):
+    """function to process additional sensor depths
+
+    Args:
+        image_idx: specific image index to work with
+        sensor_depths: semantics data
+    """
+
+    # sensor depth
+    sensor_depth = sensor_depths[image_idx]
+
+    return {"sensor_depth": sensor_depth}
+
+
 @dataclass
 class SDFStudioDataParserConfig(DataParserConfig):
     """Scene dataset parser config"""
@@ -99,7 +113,9 @@ class SDFStudioDataParserConfig(DataParserConfig):
     data: Path = Path("data/DTU/scan65")
     """Directory specifying location of data."""
     include_mono_prior: bool = False
-    """whether or not to include loading of normal """
+    """whether or not to load monocular depth and normal """
+    include_sensor_depth: bool = False
+    """whether or not to load sensor depth"""
     downscale_factor: int = 1
     scene_scale: float = 2.0
     """
@@ -136,6 +152,7 @@ class SDFStudio(DataParser):
         image_filenames = []
         depth_images = []
         normal_images = []
+        sensor_depth_images = []
         fx = []
         fy = []
         cx = []
@@ -179,6 +196,12 @@ class SDFStudio(DataParser):
                 normal_map = rot @ normal_map
                 normal_map = normal_map.permute(1, 0).reshape(*normal.shape[1:], 3)
                 normal_images.append(normal_map)
+
+            if self.config.include_sensor_depth:
+                assert meta["has_sensor_depth"]
+                # load sensor depth
+                sensor_depth = np.load(self.config.data / frame["sensor_depth_path"])
+                sensor_depth_images.append(torch.from_numpy(sensor_depth).float())
 
         fx = torch.stack(fx)
         fy = torch.stack(fy)
@@ -237,6 +260,12 @@ class SDFStudio(DataParser):
             }
         else:
             additional_inputs_dict = {}
+
+        if self.config.include_sensor_depth:
+            additional_inputs_dict["sensor_depth"] = {
+                "func": get_sensor_depths,
+                "kwargs": {"sensor_depths": sensor_depth_images},
+            }
 
         # load pair information
         pairs_path = self.config.data / "pairs.txt"
