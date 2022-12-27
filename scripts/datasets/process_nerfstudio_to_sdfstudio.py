@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 from pathlib import Path
 
 import cv2
@@ -7,6 +8,7 @@ import numpy as np
 import PIL
 from PIL import Image
 from torchvision import transforms
+from tqdm import tqdm
 
 
 def main():
@@ -17,14 +19,22 @@ def main():
 
     parser = argparse.ArgumentParser(description="preprocess scannet dataset to sdfstudio dataset")
 
-    parser.add_argument("--data", dest="input_path", help="path to scannet scene")
+    parser.add_argument("--data", dest="input_path", help="path to polycam/colmap data directory")
     parser.set_defaults(input_path="NONE")
 
-    parser.add_argument("--output-dir", dest="output_path", help="path to output")
+    parser.add_argument("--output-dir", dest="output_path", help="path to output directory")
     parser.set_defaults(output_path="NONE")
 
-    parser.add_argument("--type", dest="type", default="colmap", choices=["colmap", "polycam"])
+    parser.add_argument("--type", dest="type", required=True, choices=["colmap", "polycam"])
     parser.add_argument("--indoor", action="store_true")
+
+    parser.add_argument("--crop-mult", dest="crop_mult", type=int, default=1)
+    parser.add_argument("--mono-prior", action="store_true")
+    parser.add_argument("--omnidata_path", dest="omnidata_path", help="path to omnidata model")
+    parser.set_defaults(omnidata_path="/home/pablo/0Dev/repos/omnidata/omnidata_tools/torch/")
+
+    parser.add_argument("--pretrained_models", dest="pretrained_models", help="path to pretrained models")
+    parser.set_defaults(pretrained_models="/home/pablo/0Dev/repos/omnidata/omnidata_tools/torch/pretrained_models/")
 
     args = parser.parse_args()
 
@@ -117,7 +127,7 @@ def main():
     # get smallest side to generate square crop
     target_crop = min(H, W)
 
-    target_size = 384
+    target_size = 384 * args.crop_mult
     trans_totensor = transforms.Compose(
         [
             transforms.CenterCrop(target_crop),
@@ -146,7 +156,7 @@ def main():
 
     frames = []
     out_index = 0
-    for idx, (valid, pose, image_path) in enumerate(zip(valid_poses, poses, image_paths)):
+    for idx, (valid, pose, image_path) in enumerate(tqdm(zip(valid_poses, poses, image_paths))):
         if not valid:
             continue
 
@@ -192,6 +202,28 @@ def main():
     # save as json
     with open(output_path / "meta_data.json", "w", encoding="utf-8") as f:
         json.dump(output_data, f, indent=4)
+
+    if args.mono_prior:
+        assert os.path.exists(args.pretrained_models), "Pretrained model path not found"
+        assert os.path.exists(args.omnidata_path), "omnidata l path not found"
+        # generate mono depth and normal
+        print("Generating mono depth")
+        os.system(
+            f"python scripts/datasets/extract_monocular_cues.py \
+            --omnidata_path {args.omnidata_path} \
+            --pretrained_model {args.pretrained_models} \
+            --img_path {output_path} --output_path {output_path} \
+            --task depth"
+        )
+        print("Generating mono normal")
+        os.system(
+            f"python scripts/datasets/extract_monocular_cues.py \
+            --omnidata_path {args.omnidata_path} \
+            --pretrained_model {args.pretrained_models} \
+            --img_path {output_path} --output_path {output_path} \
+            --task normal"
+        )
+        print("Done!")
 
 
 if __name__ == "__main__":
