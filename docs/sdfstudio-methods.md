@@ -217,3 +217,12 @@ Encouraging multi-view photometric consistency is proposed in Geo-NeuS. For each
 ```
 
 where topk denotes the number of nearby views which have the smallest NCC error. Only those patchesare used for supervision, effectively ignoring outliers, e.g., due to occlusion.
+
+## Sensor Depth Loss
+
+RGBD data is useful for high-quality surface reconstruction. [Neural RGB-D Surface Reconstruction](https://github.com/dazinovic/neural-rgbd-surface-reconstruction) propose two different loss functions: free space loss and sdf loss. Free space loss enforces the network to predict large SDF values between the camera origin and the truncation region of the observed surface. SDF loss enforces the network to predict approximate SDF values converted from depth observations. We further support L1 loss which enforce the consistency between volume rendered depth and sensor depth. The truncation value and the weights for sensor depth loss can be changed with the following command:
+
+```bash
+# truncation is set to 5cm with a rough scale value 0.3 (0.015 = 0.05 * 0.3)
+--pipeline.model.sensor-depth-truncation 0.015 --pipeline.model.sensor-depth-l1-loss-mult 0.1 --pipeline.model.sensor-depth-freespace-loss-mult 10.0 --pipeline.model.sensor-depth-sdf-loss-mult 6000.0
+```

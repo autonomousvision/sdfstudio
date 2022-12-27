@@ -126,7 +126,7 @@ We provide many other models than NeuS-facto, see [the documentation](docs/sdfst
 ns-train neus --pipeline.model.sdf-field.inside-outside False sdfstudio-data --data data/sdfstudio-demo-data/dtu-scan65
 ```
 
-For a full list of included models run `ns-train --help`. Please refer to the [documentation](docs/sdfstudio-methods.md) for a more detailed explaination for each method.
+For a full list of included models run `ns-train --help`. Please refer to the [documentation](docs/sdfstudio-methods.md) for a more detailed explanation for each method.
 
 ### Modify Configuration
 

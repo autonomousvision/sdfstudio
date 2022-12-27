@@ -245,6 +245,7 @@ sdfstudio_downloads = {
     "tanks-and-temple": "https://s3.eu-central-1.amazonaws.com/avg-projects/monosdf/data/tnt_advanced.tar",
     "tanks-and-temple-highres": "https://s3.eu-central-1.amazonaws.com/avg-projects/monosdf/data/highresTNT.tar",
     "heritage": "https://s3.eu-central-1.amazonaws.com/avg-projects/monosdf/data/Heritage-Recon.tar",
+    "neural-rgbd-data": "http://kaldir.vc.in.tum.de/neural_rgbd/neural_rgbd_data.zip",
     "all": None,
 }
 
@@ -276,15 +277,23 @@ class SDFstudioDemoDownload(DatasetDownload):
         target_path = str(save_dir / self.dataset_name)
         os.makedirs(target_path, exist_ok=True)
 
-        download_path = Path(f"{target_path}.tar")
+        format = url[-4:]
+
+        download_path = Path(f"{target_path}{format}")
         tmp_path = str(save_dir / ".temp")
         shutil.rmtree(tmp_path, ignore_errors=True)
         os.makedirs(tmp_path, exist_ok=True)
 
         os.system(f"curl -L {url} > {download_path}")
-
-        with tarfile.open(download_path, "r") as tar_ref:
-            tar_ref.extractall(str(tmp_path))
+        if format == ".tar":
+            with tarfile.open(download_path, "r") as tar_ref:
+                tar_ref.extractall(str(target_path))
+        elif format == ".zip":
+            with zipfile.ZipFile(download_path, "r") as zip_ref:
+                zip_ref.extractall(str(target_path))
+            return
+        else:
+            raise NotImplementedError
 
         inner_folders = os.listdir(tmp_path)
         assert len(inner_folders) == 1, "There is more than one folder inside this zip file."

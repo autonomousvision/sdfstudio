@@ -17,10 +17,12 @@ Collection of Losses.
 """
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 from torchtyping import TensorType
 
 from nerfstudio.cameras.rays import RaySamples
+from nerfstudio.field_components.field_heads import FieldHeadNames
 
 L1Loss = nn.L1Loss
 MSELoss = nn.MSELoss
@@ -561,3 +563,55 @@ class MultiViewLoss(nn.Module):
                 breakpoint()
 
         return torch.sum(min_ssim) / (min_ssim_valid.float().sum() + 1e-6)
+
+
+# sensor depth loss, adapted from https://github.com/dazinovic/neural-rgbd-surface-reconstruction/blob/main/losses.py
+class SensorDepthLoss(nn.Module):
+    """Sensor Depth loss"""
+
+    def __init__(self, truncation: float):
+        super(SensorDepthLoss, self).__init__()
+        self.truncation = truncation  #  0.05 * 0.3 5cm scaled
+
+    def forward(self, batch, outputs):
+        """take the mim
+
+        Args:
+            batch (Dict): inputs
+            outputs (Dict): outputs data from surface model
+
+        Returns:
+            l1_loss: l1 loss
+            freespace_loss: free space loss
+            sdf_loss: sdf loss
+        """
+        depth_pred = outputs["depth"]
+        depth_gt = batch["sensor_depth"].to(depth_pred.device)[..., None]
+        valid_gt_mask = depth_gt > 0.0
+
+        l1_loss = torch.sum(valid_gt_mask * torch.abs(depth_gt - depth_pred)) / (valid_gt_mask.sum() + 1e-6)
+
+        # free space loss and sdf loss
+        ray_samples = outputs["ray_samples"]
+        filed_outputs = outputs["field_outputs"]
+        pred_sdf = filed_outputs[FieldHeadNames.SDF][..., 0]
+        directions_norm = outputs["directions_norm"]
+
+        z_vals = ray_samples.frustums.starts[..., 0] / directions_norm
+
+        truncation = self.truncation
+        front_mask = valid_gt_mask & (z_vals < (depth_gt - truncation))
+        back_mask = valid_gt_mask & (z_vals > (depth_gt + truncation))
+        sdf_mask = valid_gt_mask & (~front_mask) & (~back_mask)
+
+        num_fs_samples = front_mask.sum()
+        num_sdf_samples = sdf_mask.sum()
+        num_samples = num_fs_samples + num_sdf_samples + 1e-6
+        fs_weight = 1.0 - num_fs_samples / num_samples
+        sdf_weight = 1.0 - num_sdf_samples / num_samples
+
+        free_space_loss = torch.mean((F.relu(truncation - pred_sdf) * front_mask) ** 2) * fs_weight
+
+        sdf_loss = torch.mean(((z_vals + pred_sdf) - depth_gt) ** 2 * sdf_mask) * sdf_weight
+
+        return l1_loss, free_space_loss, sdf_loss

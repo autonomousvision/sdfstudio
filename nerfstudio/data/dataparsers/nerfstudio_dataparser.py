@@ -181,7 +181,7 @@ class Nerfstudio(DataParser):
             orientation_method = self.config.orientation_method
 
         poses = torch.from_numpy(np.array(poses).astype(np.float32))
-        poses = camera_utils.auto_orient_and_center_poses(
+        poses, _ = camera_utils.auto_orient_and_center_poses(
             poses,
             method=orientation_method,
             center_poses=self.config.center_poses,
