@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 
+import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 import PIL
 from PIL import Image
@@ -16,6 +18,13 @@ parser.set_defaults(im_name="NONE")
 
 parser.add_argument("--output_path", dest="output_path", help="path to output")
 parser.set_defaults(store_name="NONE")
+parser.add_argument(
+    "--type",
+    dest="type",
+    default="mono_prior",
+    choices=["mono_prior", "sensor_depth"],
+    help="mono_prior to use monocular prior, sensor_depth to use depth captured with a depth sensor (gt depth)",
+)
 
 args = parser.parse_args()
 
@@ -27,6 +36,14 @@ trans_totensor = transforms.Compose(
     ]
 )
 
+depth_trans_totensor = transforms.Compose(
+    [
+        transforms.Resize([968, 1296], interpolation=PIL.Image.NEAREST),
+        transforms.CenterCrop(image_size * 2),
+        transforms.Resize(image_size, interpolation=PIL.Image.NEAREST),
+    ]
+)
+
 output_path = Path(args.output_path)  # "data/custom/scannet_scene0050_00"
 input_path = Path(args.input_path)  # "/home/yuzh/Projects/datasets/scannet/scene0050_00"
 
@@ -35,6 +52,11 @@ output_path.mkdir(parents=True, exist_ok=True)
 # load color
 color_path = input_path / "frames" / "color"
 color_paths = sorted(glob.glob(os.path.join(color_path, "*.jpg")), key=lambda x: int(os.path.basename(x)[:-4]))
+
+# load depth
+depth_path = input_path / "frames" / "depth"
+depth_paths = sorted(glob.glob(os.path.join(depth_path, "*.png")), key=lambda x: int(os.path.basename(x)[:-4]))
+
 
 # load intrinsic
 intrinsic_path = input_path / "frames" / "intrinsic" / "intrinsic_color.txt"
@@ -84,7 +106,7 @@ K = camera_intrinsic
 
 frames = []
 out_index = 0
-for idx, (valid, pose, image_path) in enumerate(zip(valid_poses, poses, color_paths)):
+for idx, (valid, pose, image_path, depth_path) in enumerate(zip(valid_poses, poses, color_paths, depth_paths)):
 
     if idx % 10 != 0:
         continue
@@ -97,6 +119,18 @@ for idx, (valid, pose, image_path) in enumerate(zip(valid_poses, poses, color_pa
     img_tensor = trans_totensor(img)
     img_tensor.save(target_image)
 
+    # load depth
+    target_depth_image = output_path / f"{out_index:06d}_sensor_depth.png"
+    depth = cv2.imread(depth_path, -1).astype(np.float32) / 1000.0
+
+    depth_PIL = Image.fromarray(depth)
+    new_depth = depth_trans_totensor(depth_PIL)
+    new_depth = np.asarray(new_depth)
+    # scale depth as we normalize the scene to unit box
+    new_depth *= scale
+    plt.imsave(target_depth_image, new_depth, cmap="viridis")
+    np.save(str(target_depth_image).replace(".png", ".npy"), new_depth)
+
     rgb_path = str(target_image.relative_to(output_path))
     frame = {
         "rgb_path": rgb_path,
@@ -104,6 +138,7 @@ for idx, (valid, pose, image_path) in enumerate(zip(valid_poses, poses, color_pa
         "intrinsics": K.tolist(),
         "mono_depth_path": rgb_path.replace("_rgb.png", "_depth.npy"),
         "mono_normal_path": rgb_path.replace("_rgb.png", "_normal.npy"),
+        "sensor_depth_path": rgb_path.replace("_rgb.png", "_sensor_depth.npy"),
     }
 
     frames.append(frame)
@@ -124,6 +159,7 @@ output_data = {
     "height": image_size,
     "width": image_size,
     "has_mono_prior": True,
+    "has_sensor_depth": True,
     "pairs": None,
     "worldtogt": scale_mat.tolist(),
     "scene_box": scene_box,
