@@ -150,4 +150,5 @@ Next, you can extract monocular depth and normal cues if you like to use those d
 
 ```bash
 python scripts/datasets/extract_monocular_cues.py --task normal --img_path data/custom/scannet_scene0050_00/ --output_path data/custom/scannet_scene0050_00 --omnidata_path YOUR_OMNIDATA_PATH --pretrained_models PRETRAINED_MODELS
+python scripts/datasets/extract_monocular_cues.py --task depth --img_path data/custom/scannet_scene0050_00/ --output_path data/custom/scannet_scene0050_00 --omnidata_path YOUR_OMNIDATA_PATH --pretrained_models PRETRAINED_MODELS
 ```
