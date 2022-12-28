@@ -158,7 +158,7 @@ def save_outputs(img_path, output_file_name):
 
         if args.task == "depth":
             if scale_factor > 1:
-                output = F.interpolate(output.unsqueeze(0), scale_factor=scale_factor, mode="bicubic").squeeze(0)
+                output = F.interpolate(output.unsqueeze(0), scale_factor=scale_factor, mode="nearest").squeeze(0)
             output = output.clamp(0, 1)
 
             np.save(save_path.replace(".png", ".npy"), output.detach().cpu().numpy()[0])

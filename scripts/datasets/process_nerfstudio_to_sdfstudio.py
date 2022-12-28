@@ -31,10 +31,10 @@ def main():
     parser.add_argument("--crop-mult", dest="crop_mult", type=int, default=1)
     parser.add_argument("--mono-prior", action="store_true")
     parser.add_argument("--omnidata_path", dest="omnidata_path", help="path to omnidata model")
-    parser.set_defaults(omnidata_path="/home/pablo/0Dev/repos/omnidata/omnidata_tools/torch/")
+    parser.set_defaults(omnidata_path="/home/yuzh/Projects/omnidata/omnidata_tools/torch")
 
     parser.add_argument("--pretrained_models", dest="pretrained_models", help="path to pretrained models")
-    parser.set_defaults(pretrained_models="/home/pablo/0Dev/repos/omnidata/omnidata_tools/torch/pretrained_models/")
+    parser.set_defaults(pretrained_models="/home/yuzh/Projects/omnidata/omnidata_tools/torch/pretrained_models/")
 
     args = parser.parse_args()
 
