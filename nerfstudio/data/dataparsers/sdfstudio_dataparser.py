@@ -33,6 +33,7 @@ from nerfstudio.data.dataparsers.base_dataparser import (
     DataparserOutputs,
 )
 from nerfstudio.data.scene_box import SceneBox
+from nerfstudio.utils.images import BasicImages
 from nerfstudio.utils.io import load_from_json
 
 CONSOLE = Console()
@@ -118,6 +119,20 @@ def get_foreground_masks(image_idx: int, fg_masks):
     return {"fg_mask": fg_mask}
 
 
+def get_sparse_sfm_points(image_idx: int, sfm_points):
+    """function to process additional sparse sfm points
+
+    Args:
+        image_idx: specific image index to work with
+        sfm_points: sparse sfm points
+    """
+
+    # sfm points
+    sparse_sfm_points = sfm_points[image_idx]
+    sparse_sfm_points = BasicImages([sparse_sfm_points])
+    return {"sparse_sfm_points": sparse_sfm_points}
+
+
 @dataclass
 class SDFStudioDataParserConfig(DataParserConfig):
     """Scene dataset parser config"""
@@ -132,6 +147,8 @@ class SDFStudioDataParserConfig(DataParserConfig):
     """whether or not to load sensor depth"""
     include_foreground_mask: bool = False
     """whether or not to load foreground mask"""
+    include_sfm_points: bool = False
+    """whether or not to load sfm points"""
     downscale_factor: int = 1
     scene_scale: float = 2.0
     """
@@ -170,6 +187,7 @@ class SDFStudio(DataParser):
         normal_images = []
         sensor_depth_images = []
         foreground_mask_images = []
+        sfm_points = []
         fx = []
         fy = []
         cx = []
@@ -226,6 +244,12 @@ class SDFStudio(DataParser):
                 foreground_mask = np.array(Image.open(self.config.data / frame["foreground_mask"]), dtype="uint8")
                 foreground_mask = foreground_mask[..., :1]
                 foreground_mask_images.append(torch.from_numpy(foreground_mask).float() / 255.0)
+
+            if self.config.include_sfm_points:
+                assert meta["has_sparse_sfm_points"]
+                # load sparse sfm points
+                sfm_points_view = np.loadtxt(self.config.data / frame["sfm_sparse_points_view"])
+                sfm_points.append(torch.from_numpy(sfm_points_view).float())
 
         fx = torch.stack(fx)
         fy = torch.stack(fy)
@@ -297,6 +321,11 @@ class SDFStudio(DataParser):
                 "kwargs": {"fg_masks": foreground_mask_images},
             }
 
+        if self.config.include_sfm_points:
+            additional_inputs_dict["sfm_points"] = {
+                "func": get_sparse_sfm_points,
+                "kwargs": {"sfm_points": sfm_points},
+            }
         # load pair information
         pairs_path = self.config.data / "pairs.txt"
         if pairs_path.exists() and split == "train" and self.config.load_pairs:
