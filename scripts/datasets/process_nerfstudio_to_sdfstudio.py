@@ -148,7 +148,7 @@ def main():
     depth_trans_totensor = transforms.Compose(
         [
             transforms.Resize([H, W], interpolation=PIL.Image.NEAREST),
-            transforms.CenterCrop(target_size),
+            transforms.CenterCrop(target_crop),
             transforms.Resize(target_size, interpolation=PIL.Image.NEAREST),
         ]
     )
@@ -195,7 +195,7 @@ def main():
         new_depth = depth_trans_totensor(depth_PIL)
         new_depth = np.asarray(new_depth)
         # scale depth as we normalize the scene to unit box
-        # new_depth *= scale
+        new_depth = np.copy(new_depth) * scale
         plt.imsave(target_depth_image, new_depth, cmap="viridis")
         np.save(str(target_depth_image).replace(".png", ".npy"), new_depth)
 
