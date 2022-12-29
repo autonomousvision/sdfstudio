@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 from torchvision import transforms
+from tqdm import tqdm
 
 parser = argparse.ArgumentParser(description="Visualize output for depth or surface normals")
 
@@ -141,8 +142,12 @@ def standardize_depth_map(img, mask_valid=None, trunc_value=0.1):
 def save_outputs(img_path, output_file_name):
     with torch.no_grad():
         save_path = os.path.join(args.output_path, output_file_name.replace("_rgb", f"_{args.task}") + ".png")
-        print(f"Reading input {img_path} ...")
+        # print(f"Reading input {img_path} ...")
         img = Image.open(img_path)
+        H, W = img.size[1], img.size[0]
+        assert H == W, "Image should be square"
+        assert H % 384 == 0, "Image size should be divisible by 384"
+        scale_factor = H // 384
 
         img_tensor = trans_totensor(img)[:3].unsqueeze(0).to(device)
 
@@ -152,23 +157,26 @@ def save_outputs(img_path, output_file_name):
         output = model(img_tensor).clamp(min=0, max=1)
 
         if args.task == "depth":
-            # output = F.interpolate(output.unsqueeze(0), (512, 512), mode='bicubic').squeeze(0)
+            if scale_factor > 1:
+                output = F.interpolate(output.unsqueeze(0), scale_factor=scale_factor, mode="nearest").squeeze(0)
             output = output.clamp(0, 1)
 
             np.save(save_path.replace(".png", ".npy"), output.detach().cpu().numpy()[0])
             plt.imsave(save_path, output.detach().cpu().squeeze(), cmap="viridis")
         else:
+            if scale_factor > 1:
+                output = torch.nn.functional.interpolate(output, scale_factor=scale_factor, mode="nearest")
             np.save(save_path.replace(".png", ".npy"), output.detach().cpu().numpy()[0])
             trans_topil(output[0]).save(save_path)
 
-        print(f"Writing output {save_path} ...")
+        # print(f"Writing output {save_path} ...")
 
 
 img_path = Path(args.img_path)
 if img_path.is_file():
     save_outputs(args.img_path, os.path.splitext(os.path.basename(args.img_path))[0])
 elif img_path.is_dir():
-    for f in glob.glob(args.img_path + "/*_rgb.png"):
+    for f in tqdm(glob.glob(args.img_path + "/*_rgb.png")):
         save_outputs(f, os.path.splitext(os.path.basename(f))[0])
 else:
     print("invalid file path!")
