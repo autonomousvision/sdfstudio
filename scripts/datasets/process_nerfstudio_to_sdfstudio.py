@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 import PIL
 from PIL import Image
@@ -26,10 +27,10 @@ def main():
     parser.set_defaults(output_path="NONE")
 
     parser.add_argument("--type", dest="type", required=True, choices=["colmap", "polycam"])
+    parser.add_argument("--geo-type", dest="geo_type", default="mono_prior", choices=["mono_prior", "sensor_depth"])
     parser.add_argument("--indoor", action="store_true")
 
     parser.add_argument("--crop-mult", dest="crop_mult", type=int, default=1)
-    parser.add_argument("--mono-prior", action="store_true")
     parser.add_argument("--omnidata_path", dest="omnidata_path", help="path to omnidata model")
     parser.set_defaults(omnidata_path="/home/yuzh/Projects/omnidata/omnidata_tools/torch")
 
@@ -67,6 +68,7 @@ def main():
     # load poses
     poses = []
     image_paths = []
+    depth_paths = []
     # only load images with corresponding pose info
     # currently in random order??, probably need to sort
     for camera in camera_parameters:
@@ -83,10 +85,18 @@ def main():
         c2w = np.array(camera["transform_matrix"]).reshape(4, 4)
         c2w[0:3, 1:3] *= -1
 
-        img_path = input_path / camera["file_path"]
+        poses.append(c2w)
+
+        file_path = Path(camera["file_path"])
+        img_path = input_path / "images" / file_path.name
         assert img_path.exists()
         image_paths.append(img_path)
-        poses.append(c2w)
+
+        # include sensor depths
+        if args.geo_type == "sensor_depth":
+            depth_path = input_path / "depths" / f"{file_path.stem}.png"
+            assert depth_path.exists()
+            depth_paths.append(depth_path)
 
     poses = np.array(poses)
 
@@ -135,6 +145,14 @@ def main():
         ]
     )
 
+    depth_trans_totensor = transforms.Compose(
+        [
+            transforms.Resize([H, W], interpolation=PIL.Image.NEAREST),
+            transforms.CenterCrop(target_size),
+            transforms.Resize(target_size, interpolation=PIL.Image.NEAREST),
+        ]
+    )
+
     # center crop by min_dim
     offset_x = (W - target_crop) * 0.5
     offset_y = (H - target_crop) * 0.5
@@ -160,18 +178,34 @@ def main():
         if not valid:
             continue
 
+        # save rgb image
         target_image = output_path / f"{out_index:06d}_rgb.png"
         img = Image.open(image_path)
         img_tensor = trans_totensor(img)
         img_tensor.save(target_image)
 
         rgb_path = str(target_image.relative_to(output_path))
+
+        # load depth
+        depth_path = depth_paths[idx]
+        target_depth_image = output_path / f"{out_index:06d}_sensor_depth.png"
+        depth = cv2.imread(str(depth_path), -1).astype(np.float32) / 1000.0
+
+        depth_PIL = Image.fromarray(depth)
+        new_depth = depth_trans_totensor(depth_PIL)
+        new_depth = np.asarray(new_depth)
+        # scale depth as we normalize the scene to unit box
+        # new_depth *= scale
+        plt.imsave(target_depth_image, new_depth, cmap="viridis")
+        np.save(str(target_depth_image).replace(".png", ".npy"), new_depth)
+
         frame = {
             "rgb_path": rgb_path,
             "camtoworld": pose.tolist(),
             "intrinsics": K[idx].tolist() if isinstance(K, list) else K.tolist(),
             "mono_depth_path": rgb_path.replace("_rgb.png", "_depth.npy"),
             "mono_normal_path": rgb_path.replace("_rgb.png", "_normal.npy"),
+            "sensor_depth_path": rgb_path.replace("_rgb.png", "_sensor_depth.npy"),
         }
 
         frames.append(frame)
@@ -191,7 +225,8 @@ def main():
         "camera_model": "OPENCV",
         "height": target_size,
         "width": target_size,
-        "has_mono_prior": True,
+        "has_mono_prior": args.geo_type == "mono_prior",
+        "has_sensor_depth": args.geo_type == "sensor_depth",
         "pairs": None,
         "worldtogt": scale_mat.tolist(),
         "scene_box": scene_box,
@@ -203,7 +238,7 @@ def main():
     with open(output_path / "meta_data.json", "w", encoding="utf-8") as f:
         json.dump(output_data, f, indent=4)
 
-    if args.mono_prior:
+    if args.geo_type == "mono_prior":
         assert os.path.exists(args.pretrained_models), "Pretrained model path not found"
         assert os.path.exists(args.omnidata_path), "omnidata l path not found"
         # generate mono depth and normal
