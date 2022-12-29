@@ -461,6 +461,21 @@ class SurfaceModel(Model):
         else:
             combined_normal = torch.cat([normal], dim=1)
 
+        images_dict = {
+            "img": combined_rgb,
+            "accumulation": combined_acc,
+            "depth": combined_depth,
+            "normal": combined_normal,
+        }
+
+        if "sensor_depth" in batch:
+            sensor_depth = batch["sensor_depth"]
+            depth_pred = outputs["depth"]
+
+            combined_sensor_depth = torch.cat([sensor_depth[..., None], depth_pred], dim=1)
+            combined_sensor_depth = colormaps.apply_depth_colormap(combined_sensor_depth)
+            images_dict["sensor_depth"] = combined_sensor_depth
+
         # Switch images from [H, W, C] to [1, C, H, W] for metrics computations
         image = torch.moveaxis(image, -1, 0)[None, ...]
         rgb = torch.moveaxis(rgb, -1, 0)[None, ...]
@@ -472,12 +487,5 @@ class SurfaceModel(Model):
         # all of these metrics will be logged as scalars
         metrics_dict = {"psnr": float(psnr.item()), "ssim": float(ssim)}  # type: ignore
         metrics_dict["lpips"] = float(lpips)
-
-        images_dict = {
-            "img": combined_rgb,
-            "accumulation": combined_acc,
-            "depth": combined_depth,
-            "normal": combined_normal,
-        }
 
         return metrics_dict, images_dict
