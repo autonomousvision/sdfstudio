@@ -287,7 +287,7 @@ class SDFstudioDemoDownload(DatasetDownload):
         os.system(f"curl -L {url} > {download_path}")
         if format == ".tar":
             with tarfile.open(download_path, "r") as tar_ref:
-                tar_ref.extractall(str(target_path))
+                tar_ref.extractall(str(tmp_path))
         elif format == ".zip":
             with zipfile.ZipFile(download_path, "r") as zip_ref:
                 zip_ref.extractall(str(target_path))

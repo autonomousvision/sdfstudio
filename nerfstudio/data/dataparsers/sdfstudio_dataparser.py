@@ -104,6 +104,20 @@ def get_sensor_depths(image_idx: int, sensor_depths):
     return {"sensor_depth": sensor_depth}
 
 
+def get_foreground_masks(image_idx: int, fg_masks):
+    """function to process additional foreground_masks
+
+    Args:
+        image_idx: specific image index to work with
+        fg_masks: foreground_masks
+    """
+
+    # sensor depth
+    fg_mask = fg_masks[image_idx]
+
+    return {"fg_mask": fg_mask}
+
+
 @dataclass
 class SDFStudioDataParserConfig(DataParserConfig):
     """Scene dataset parser config"""
@@ -116,6 +130,8 @@ class SDFStudioDataParserConfig(DataParserConfig):
     """whether or not to load monocular depth and normal """
     include_sensor_depth: bool = False
     """whether or not to load sensor depth"""
+    include_foreground_mask: bool = False
+    """whether or not to load foreground mask"""
     downscale_factor: int = 1
     scene_scale: float = 2.0
     """
@@ -153,6 +169,7 @@ class SDFStudio(DataParser):
         depth_images = []
         normal_images = []
         sensor_depth_images = []
+        foreground_mask_images = []
         fx = []
         fy = []
         cx = []
@@ -202,6 +219,13 @@ class SDFStudio(DataParser):
                 # load sensor depth
                 sensor_depth = np.load(self.config.data / frame["sensor_depth_path"])
                 sensor_depth_images.append(torch.from_numpy(sensor_depth).float())
+
+            if self.config.include_foreground_mask:
+                assert meta["has_foreground_mask"]
+                # load foreground mask
+                foreground_mask = np.array(Image.open(self.config.data / frame["foreground_mask"]), dtype="uint8")
+                foreground_mask = foreground_mask[..., :1]
+                foreground_mask_images.append(torch.from_numpy(foreground_mask).float() / 255.0)
 
         fx = torch.stack(fx)
         fy = torch.stack(fy)
@@ -265,6 +289,12 @@ class SDFStudio(DataParser):
             additional_inputs_dict["sensor_depth"] = {
                 "func": get_sensor_depths,
                 "kwargs": {"sensor_depths": sensor_depth_images},
+            }
+
+        if self.config.include_foreground_mask:
+            additional_inputs_dict["foreground_masks"] = {
+                "func": get_foreground_masks,
+                "kwargs": {"fg_masks": foreground_mask_images},
             }
 
         # load pair information
