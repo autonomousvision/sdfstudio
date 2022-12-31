@@ -167,6 +167,8 @@ exports/
 renders/
 outputs
 vis/
+meshes/
+gradio_cached_examples/
 # tensorboard log files
 events.out.*
 
