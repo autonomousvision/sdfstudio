@@ -503,6 +503,7 @@ class ProcessPolycam:
     """Minimum blur score to use an image. If the blur score is below this value, the image will be skipped."""
     crop_border_pixels: int = 15
     """Number of pixels to crop from each border of the image. Useful as borders may be black due to undistortion."""
+    use_depth: bool = False
 
     verbose: bool = False
     """If True, print extra logging."""
@@ -513,6 +514,9 @@ class ProcessPolycam:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         image_dir = self.output_dir / "images"
         image_dir.mkdir(parents=True, exist_ok=True)
+        if self.use_depth:
+            depth_dir = self.output_dir / "depths"
+            depth_dir.mkdir(parents=True, exist_ok=True)
 
         summary_log = []
 
@@ -555,6 +559,22 @@ class ProcessPolycam:
             crop_border_pixels=self.crop_border_pixels,
             verbose=self.verbose,
         )
+        # Copy depth images to output directory
+
+        if self.use_depth:
+            polycam_depth_filenames = []
+            polycam_depth_dir = self.data / "keyframes" / "depth"
+            for f in polycam_depth_dir.iterdir():
+                if f.suffix.lower() in [".jpg", ".jpeg", ".png", ".tif", ".tiff"]:
+                    polycam_depth_filenames.append(f)
+            polycam_depth_filenames = sorted(polycam_depth_filenames, key=lambda fn: int(fn.stem))
+            polycam_depth_filenames = list(np.array(polycam_depth_filenames)[idx])
+
+            copied_depth_paths = process_data_utils.copy_images_list(
+                polycam_depth_filenames,
+                image_dir=depth_dir,
+                verbose=self.verbose,
+            )
         num_frames = len(copied_image_paths)
 
         copied_image_paths = [Path("images/" + copied_image_path.name) for copied_image_path in copied_image_paths]

@@ -106,6 +106,8 @@ class SurfaceModelConfig(ModelConfig):
     """Sensor depth free space loss multiplier."""
     sensor_depth_sdf_loss_mult: float = 0.0
     """Sensor depth sdf loss multiplier."""
+    sparse_points_sdf_loss_mult: float = 0.0
+    """sparse point sdf loss multiplier"""
     sdf_field: SDFFieldConfig = SDFFieldConfig()
     """Config for SDF Field"""
     background_model: Literal["grid", "mlp", "none"] = "mlp"
@@ -360,7 +362,7 @@ class SurfaceModel(Model):
 
             # foreground mask loss
             if "fg_mask" in batch and self.config.fg_mask_loss_mult > 0.0:
-                fg_label = 1.0 - batch["fg_mask"].float().to(self.device)
+                fg_label = batch["fg_mask"].float().to(self.device)
                 weights_sum = outputs["weights"].sum(dim=1).clip(1e-3, 1.0 - 1e-3)
                 loss_dict["fg_mask_loss"] = (
                     F.binary_cross_entropy(weights_sum, fg_label) * self.config.fg_mask_loss_mult
@@ -406,6 +408,14 @@ class SurfaceModel(Model):
 
                 loss_dict["patch_loss"] = (
                     self.patch_loss(patches, patches_valid_mask) * self.config.patch_warp_loss_mult
+                )
+
+            # sparse points sdf loss
+            if "sparse_sfm_points" in batch and self.config.sparse_points_sdf_loss_mult > 0.0:
+                sparse_sfm_points = batch["sparse_sfm_points"].to(self.device)
+                sparse_sfm_points_sdf = self.field.forward_geonetwork(sparse_sfm_points)[:, 0].contiguous()
+                loss_dict["sparse_sfm_points_sdf_loss"] = (
+                    torch.mean(torch.abs(sparse_sfm_points_sdf)) * self.config.sparse_points_sdf_loss_mult
                 )
 
             # total variational loss for multi-resolution periodic feature volume

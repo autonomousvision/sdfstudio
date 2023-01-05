@@ -180,7 +180,7 @@ class Heritage(DataParser):
 
             # load sky segmentation and it's used as foreground mask
             semantic = np.load(semantic_filenames[-1])["arr_0"]
-            is_sky = semantic == 2  # sky id is 2
+            is_sky = semantic != 2  # sky id is 2
             fg_masks.append(torch.from_numpy(is_sky).unsqueeze(-1))
 
             # load sparse 3d points for each view
