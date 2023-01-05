@@ -95,7 +95,7 @@ def main():
         # include sensor depths
         if args.geo_type == "sensor_depth":
             depth_path = input_path / "depths" / f"{file_path.stem}.png"
-            assert depth_path.exists()
+            assert depth_path.exists(), f"depth path {depth_path} does not exist. Only available for polycam data."
             depth_paths.append(depth_path)
 
     poses = np.array(poses)
@@ -186,18 +186,19 @@ def main():
 
         rgb_path = str(target_image.relative_to(output_path))
 
-        # load depth
-        depth_path = depth_paths[idx]
-        target_depth_image = output_path / f"{out_index:06d}_sensor_depth.png"
-        depth = cv2.imread(str(depth_path), -1).astype(np.float32) / 1000.0
+        if args.geo_type == "sensor_depth":
+            # load depth
+            depth_path = depth_paths[idx]
+            target_depth_image = output_path / f"{out_index:06d}_sensor_depth.png"
+            depth = cv2.imread(str(depth_path), -1).astype(np.float32) / 1000.0
 
-        depth_PIL = Image.fromarray(depth)
-        new_depth = depth_trans_totensor(depth_PIL)
-        new_depth = np.asarray(new_depth)
-        # scale depth as we normalize the scene to unit box
-        new_depth = np.copy(new_depth) * scale
-        plt.imsave(target_depth_image, new_depth, cmap="viridis")
-        np.save(str(target_depth_image).replace(".png", ".npy"), new_depth)
+            depth_PIL = Image.fromarray(depth)
+            new_depth = depth_trans_totensor(depth_PIL)
+            new_depth = np.asarray(new_depth)
+            # scale depth as we normalize the scene to unit box
+            new_depth = np.copy(new_depth) * scale
+            plt.imsave(target_depth_image, new_depth, cmap="viridis")
+            np.save(str(target_depth_image).replace(".png", ".npy"), new_depth)
 
         frame = {
             "rgb_path": rgb_path,
