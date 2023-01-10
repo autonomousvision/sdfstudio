@@ -151,7 +151,7 @@ class SurfaceModel(Model):
             self.collider = AABBBoxCollider(self.scene_box, near_plane=self.scene_box.near)
         elif self.scene_box.collider_type == "sphere":
             # TODO do we also use near if the ray don't intersect with the sphere
-            self.collider = SphereCollider(radius=1.0, soft_intersection=True)
+            self.collider = SphereCollider(radius=self.scene_box.radius, soft_intersection=True)
         else:
             raise NotImplementedError
 
