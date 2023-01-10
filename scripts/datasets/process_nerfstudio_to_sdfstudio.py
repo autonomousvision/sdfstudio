@@ -42,8 +42,6 @@ def main():
     output_path = Path(args.output_path)
     input_path = Path(args.input_path)
 
-    POLYCAM = True if args.type == "polycam" else False
-
     output_path.mkdir(parents=True, exist_ok=True)
 
     # load transformation json with images/intrinsics/extrinsics
@@ -51,19 +49,18 @@ def main():
     camera_parameters = json.load(open(camera_parameters_path))
 
     # extract intrinsic parameters
-    if not POLYCAM:
-        cx = camera_parameters["cx"]
-        cy = camera_parameters["cy"]
-        fl_x = camera_parameters["fl_x"]
-        fl_y = camera_parameters["fl_y"]
-    else:
+    if args.type == "polycam":
         cx = []
         cy = []
         fl_x = []
         fl_y = []
+    elif args.type == "colmap":
+        cx = camera_parameters["cx"]
+        cy = camera_parameters["cy"]
+        fl_x = camera_parameters["fl_x"]
+        fl_y = camera_parameters["fl_y"]
 
-    camera_parameters = camera_parameters["frames"]
-    num_frames = len(camera_parameters)
+    frames = camera_parameters["frames"]
 
     # load poses
     poses = []
@@ -71,23 +68,23 @@ def main():
     depth_paths = []
     # only load images with corresponding pose info
     # currently in random order??, probably need to sort
-    for camera in camera_parameters:
-        if POLYCAM:
+    for frame in frames:
+        if args.type == "polycam":
             # average frames into single intrinsic
-            cx.append(camera["cx"])
-            cy.append(camera["cy"])
-            fl_x.append(camera["fl_x"])
-            fl_y.append(camera["fl_y"])
+            cx.append(frame["cx"])
+            cy.append(frame["cy"])
+            fl_x.append(frame["fl_x"])
+            fl_y.append(frame["fl_y"])
 
         # OpenGL/Blender convention, needs to change to COLMAP/OpenCV convention
         # https://docs.nerf.studio/en/latest/quickstart/data_conventions.html
         ## IGNORED for now
-        c2w = np.array(camera["transform_matrix"]).reshape(4, 4)
+        c2w = np.array(frame["transform_matrix"]).reshape(4, 4)
         c2w[0:3, 1:3] *= -1
-
         poses.append(c2w)
 
-        file_path = Path(camera["file_path"])
+        # include images
+        file_path = Path(frame["file_path"])
         img_path = input_path / "images" / file_path.name
         assert img_path.exists()
         image_paths.append(img_path)
@@ -95,12 +92,12 @@ def main():
         # include sensor depths
         if args.geo_type == "sensor_depth":
             depth_path = input_path / "depths" / f"{file_path.stem}.png"
-            assert depth_path.exists(), f"depth path {depth_path} does not exist. Only available for polycam data."
+            assert depth_path.exists()
             depth_paths.append(depth_path)
 
     poses = np.array(poses)
 
-    if POLYCAM:
+    if args.type == "polycam":
         # intrinsics
         camera_intrinsics = []
         for idx in range(len(cx)):
@@ -136,7 +133,6 @@ def main():
 
     # get smallest side to generate square crop
     target_crop = min(H, W)
-
     target_size = 384 * args.crop_mult
     trans_totensor = transforms.Compose(
         [
@@ -157,7 +153,7 @@ def main():
     offset_x = (W - target_crop) * 0.5
     offset_y = (H - target_crop) * 0.5
 
-    if POLYCAM:
+    if args.type == "polycam":
         for idx in range(len(camera_intrinsics)):
             camera_intrinsics[idx][0, 2] -= offset_x
             camera_intrinsics[idx][1, 2] -= offset_y
@@ -169,8 +165,6 @@ def main():
         # resize from min_dim x min_dim -> to 384 x 384
         resize_factor = target_size / target_crop
         camera_intrinsics[:2, :] *= resize_factor
-
-    K = camera_intrinsics
 
     frames = []
     out_index = 0
@@ -186,6 +180,13 @@ def main():
 
         rgb_path = str(target_image.relative_to(output_path))
 
+        frame = {
+            "rgb_path": rgb_path,
+            "camtoworld": pose.tolist(),
+            "intrinsics": camera_intrinsics[idx].tolist() if isinstance(camera_intrinsics, list)
+                                                          else camera_intrinsics.tolist(),
+        }
+
         if args.geo_type == "sensor_depth":
             # load depth
             depth_path = depth_paths[idx]
@@ -200,14 +201,11 @@ def main():
             plt.imsave(target_depth_image, new_depth, cmap="viridis")
             np.save(str(target_depth_image).replace(".png", ".npy"), new_depth)
 
-        frame = {
-            "rgb_path": rgb_path,
-            "camtoworld": pose.tolist(),
-            "intrinsics": K[idx].tolist() if isinstance(K, list) else K.tolist(),
-            "mono_depth_path": rgb_path.replace("_rgb.png", "_depth.npy"),
-            "mono_normal_path": rgb_path.replace("_rgb.png", "_normal.npy"),
-            "sensor_depth_path": rgb_path.replace("_rgb.png", "_sensor_depth.npy"),
-        }
+            frame["sensor_depth_path"] = rgb_path.replace("_rgb.png", "_sensor_depth.npy")
+
+        elif args.geo_type == "mono_prior":
+            frame["mono_depth_path"] = rgb_path.replace("_rgb.png", "_depth.npy")
+            frame["mono_normal_path"] = rgb_path.replace("_rgb.png", "_normal.npy")
 
         frames.append(frame)
         out_index += 1
@@ -231,9 +229,8 @@ def main():
         "pairs": None,
         "worldtogt": scale_mat.tolist(),
         "scene_box": scene_box,
+        "frames": frames,
     }
-
-    output_data["frames"] = frames
 
     # save as json
     with open(output_path / "meta_data.json", "w", encoding="utf-8") as f:
