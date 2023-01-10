@@ -389,7 +389,7 @@ class LocalWriter:
             if not self.has_printed and self.config.max_log_size:
                 CONSOLE.log(
                     f"Printing max of {self.config.max_log_size} lines. "
-                    "Set flag çççç[yellow]--logging.local-writer.max-log-size=0[/yellow] "
+                    "Set flag [yellow]--logging.local-writer.max-log-size=0[/yellow] "
                     "to disable line wrapping."
                 )
             latest_map, new_key = self._consolidate_events()
