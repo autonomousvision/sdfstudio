@@ -7,6 +7,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+import torch
+import torchvision
 
 import tyro
 from rich.console import Console
@@ -58,8 +60,8 @@ class TextureMesh:
         texture_utils.export_textured_mesh(
             mesh,
             pipeline,
-            self.px_per_uv_triangle,
-            self.output_dir,
+            px_per_uv_triangle=self.px_per_uv_triangle,
+            output_dir=self.output_dir,
             unwrap_method=self.unwrap_method,
             num_pixels_per_side=self.num_pixels_per_side,
         )
