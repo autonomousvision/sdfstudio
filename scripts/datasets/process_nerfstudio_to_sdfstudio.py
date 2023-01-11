@@ -219,7 +219,7 @@ def main():
 
             frame["sensor_depth_path"] = rgb_path.replace("_rgb.png", "_sensor_depth.npy")
 
-        elif args.geo_type in ["mono_prior", "both"]:
+        if args.geo_type in ["mono_prior", "both"]:
             frame["mono_depth_path"] = rgb_path.replace("_rgb.png", "_depth.npy")
             frame["mono_normal_path"] = rgb_path.replace("_rgb.png", "_normal.npy")
 
