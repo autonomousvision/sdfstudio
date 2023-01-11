@@ -27,7 +27,8 @@ def main():
     parser.set_defaults(output_path="NONE")
 
     parser.add_argument("--type", dest="type", required=True, choices=["colmap", "polycam"])
-    parser.add_argument("--geo-type", dest="geo_type", default="mono_prior", choices=["mono_prior", "sensor_depth"])
+    parser.add_argument("--geo-type", dest="geo_type", default="mono_prior",
+                        choices=["both", "mono_prior", "sensor_depth", "none"])
     parser.add_argument("--indoor", action="store_true")
 
     parser.add_argument("--crop-mult", dest="crop_mult", type=int, default=1)
@@ -90,7 +91,7 @@ def main():
         image_paths.append(img_path)
 
         # include sensor depths
-        if args.geo_type == "sensor_depth":
+        if args.geo_type in ["sensor_depth", "both"]:
             depth_path = input_path / "depths" / f"{file_path.stem}.png"
             assert depth_path.exists()
             depth_paths.append(depth_path)
@@ -187,7 +188,7 @@ def main():
                                                           else camera_intrinsics.tolist(),
         }
 
-        if args.geo_type == "sensor_depth":
+        if args.geo_type in ["sensor_depth", "both"]:
             # load depth
             depth_path = depth_paths[idx]
             target_depth_image = output_path / f"{out_index:06d}_sensor_depth.png"
@@ -203,7 +204,7 @@ def main():
 
             frame["sensor_depth_path"] = rgb_path.replace("_rgb.png", "_sensor_depth.npy")
 
-        elif args.geo_type == "mono_prior":
+        elif args.geo_type in ["mono_prior", "both"]:
             frame["mono_depth_path"] = rgb_path.replace("_rgb.png", "_depth.npy")
             frame["mono_normal_path"] = rgb_path.replace("_rgb.png", "_normal.npy")
 
@@ -211,21 +212,24 @@ def main():
         out_index += 1
 
     # scene bbox for the scannet scene
-    scene_box = {
-        "aabb": [[-1, -1, -1], [1, 1, 1]],
-        "near": 0.05,
-        "far": 2.5,
-        "radius": 1.0,
-        "collider_type": "box",
-    }
+    # TODO: box for the outdoor scene
+    if args.indoor:
+        scene_box = {
+            "aabb": [[-1, -1, -1], [1, 1, 1]],
+            "near": 0.05,
+            "far": 2.5,
+            "radius": 1.0,
+            "collider_type": "box",
+        }
+
 
     # meta data
     output_data = {
         "camera_model": "OPENCV",
         "height": target_size,
         "width": target_size,
-        "has_mono_prior": args.geo_type == "mono_prior",
-        "has_sensor_depth": args.geo_type == "sensor_depth",
+        "has_mono_prior": args.geo_type in ["mono_prior", "both"],
+        "has_sensor_depth": args.geo_type in ["sensor_depth", "both"],
         "pairs": None,
         "worldtogt": scale_mat.tolist(),
         "scene_box": scene_box,
@@ -236,7 +240,7 @@ def main():
     with open(output_path / "meta_data.json", "w", encoding="utf-8") as f:
         json.dump(output_data, f, indent=4)
 
-    if args.geo_type == "mono_prior":
+    if args.geo_type in ["mono_prior", "both"]:
         assert os.path.exists(args.pretrained_models), "Pretrained model path not found"
         assert os.path.exists(args.omnidata_path), "omnidata l path not found"
         # generate mono depth and normal
