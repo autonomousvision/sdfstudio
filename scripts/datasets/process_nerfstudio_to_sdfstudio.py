@@ -14,29 +14,30 @@ from tqdm import tqdm
 
 def main():
     """
-    given data that follows the nerfstduio format such as the output from colmap or polycam, convert to a format
-    that sdfstudio will ingest
+    given data that follows the nerfstduio format such as the output from colmap or polycam,
+    convert to a format that sdfstudio will ingest
     """
 
-    parser = argparse.ArgumentParser(description="preprocess scannet dataset to sdfstudio dataset")
+    parser = argparse.ArgumentParser(description="preprocess nerfstudio dataset to sdfstudio dataset, "
+                                                 "currently support colmap and polycam")
 
-    parser.add_argument("--data", dest="input_path", help="path to polycam/colmap data directory")
-    parser.set_defaults(input_path="NONE")
-
-    parser.add_argument("--output-dir", dest="output_path", help="path to output directory")
-    parser.set_defaults(output_path="NONE")
-
-    parser.add_argument("--type", dest="type", required=True, choices=["colmap", "polycam"])
-    parser.add_argument("--geo-type", dest="geo_type", default="mono_prior",
-                        choices=["both", "mono_prior", "sensor_depth", "none"])
-    parser.add_argument("--indoor", action="store_true")
+    parser.add_argument("--data", dest="input_path", required=True, help="path to input data directory")
+    parser.add_argument("--datatype", dest="datatype", required=True, choices=["colmap", "polycam"])
+    parser.add_argument("--output-dir", dest="output_path", required=True, help="path to output directory")
 
     parser.add_argument("--crop-mult", dest="crop_mult", type=int, default=1)
-    parser.add_argument("--omnidata_path", dest="omnidata_path", help="path to omnidata model")
-    parser.set_defaults(omnidata_path="/home/yuzh/Projects/omnidata/omnidata_tools/torch")
+    parser.add_argument("--indoor", action="store_true")
+    parser.add_argument("--sensor-depth", dest="sensor_depth", action="store_true",
+                        help="Generate sensor depths from Polygcam or not")
+    parser.add_argument("--mono-prior", dest="mono_prior", action="store_true",
+                        help="Generate mono-prior depths and normals or not")
 
-    parser.add_argument("--pretrained_models", dest="pretrained_models", help="path to pretrained models")
-    parser.set_defaults(pretrained_models="/home/yuzh/Projects/omnidata/omnidata_tools/torch/pretrained_models/")
+    parser.add_argument("--omnidata-path", dest="omnidata_path",
+                        default="/home/yuzh/Projects/omnidata/omnidata_tools/torch",
+                        help="path to omnidata model")
+    parser.add_argument("--pretrained-models", dest="pretrained_models",
+                        default="/home/yuzh/Projects/omnidata/omnidata_tools/torch/pretrained_models/",
+                        help="path to pretrained models")
 
     args = parser.parse_args()
 
@@ -50,12 +51,12 @@ def main():
     camera_parameters = json.load(open(camera_parameters_path))
 
     # extract intrinsic parameters
-    if args.type == "polycam":
+    if args.datatype == "polycam":
         cx = []
         cy = []
         fl_x = []
         fl_y = []
-    elif args.type == "colmap":
+    elif args.datatype == "colmap":
         cx = camera_parameters["cx"]
         cy = camera_parameters["cy"]
         fl_x = camera_parameters["fl_x"]
@@ -70,7 +71,7 @@ def main():
     # only load images with corresponding pose info
     # currently in random order??, probably need to sort
     for frame in frames:
-        if args.type == "polycam":
+        if args.datatype == "polycam":
             # average frames into single intrinsic
             cx.append(frame["cx"])
             cy.append(frame["cy"])
@@ -91,14 +92,14 @@ def main():
         image_paths.append(img_path)
 
         # include sensor depths
-        if args.geo_type in ["sensor_depth", "both"]:
+        if args.sensor_depth:
             depth_path = input_path / "depths" / f"{file_path.stem}.png"
             assert depth_path.exists()
             depth_paths.append(depth_path)
 
     poses = np.array(poses)
 
-    if args.type == "polycam":
+    if args.datatype == "polycam":
         # intrinsics
         camera_intrinsics = []
         for idx in range(len(cx)):
@@ -169,7 +170,7 @@ def main():
     offset_x = (W - target_crop) * 0.5
     offset_y = (H - target_crop) * 0.5
 
-    if args.type == "polycam":
+    if args.datatype == "polycam":
         for idx in range(len(camera_intrinsics)):
             camera_intrinsics[idx][0, 2] -= offset_x
             camera_intrinsics[idx][1, 2] -= offset_y
@@ -203,7 +204,7 @@ def main():
                                                           else camera_intrinsics.tolist(),
         }
 
-        if args.geo_type in ["sensor_depth", "both"]:
+        if args.sensor_depth:
             # load depth
             depth_path = depth_paths[idx]
             target_depth_image = output_path / f"{out_index:06d}_sensor_depth.png"
@@ -219,7 +220,7 @@ def main():
 
             frame["sensor_depth_path"] = rgb_path.replace("_rgb.png", "_sensor_depth.npy")
 
-        if args.geo_type in ["mono_prior", "both"]:
+        if args.mono_prior:
             frame["mono_depth_path"] = rgb_path.replace("_rgb.png", "_depth.npy")
             frame["mono_normal_path"] = rgb_path.replace("_rgb.png", "_normal.npy")
 
@@ -231,8 +232,8 @@ def main():
         "camera_model": "OPENCV",
         "height": target_size,
         "width": target_size,
-        "has_mono_prior": args.geo_type in ["mono_prior", "both"],
-        "has_sensor_depth": args.geo_type in ["sensor_depth", "both"],
+        "has_mono_prior": args.mono_prior,
+        "has_sensor_depth": args.sensor_depth,
         "pairs": None,
         "worldtogt": scale_mat.tolist(),
         "scene_box": scene_box,
@@ -243,7 +244,7 @@ def main():
     with open(output_path / "meta_data.json", "w", encoding="utf-8") as f:
         json.dump(output_data, f, indent=4)
 
-    if args.geo_type in ["mono_prior", "both"]:
+    if args.mono_prior:
         assert os.path.exists(args.pretrained_models), "Pretrained model path not found"
         assert os.path.exists(args.omnidata_path), "omnidata l path not found"
         # generate mono depth and normal
@@ -263,7 +264,9 @@ def main():
             --img_path {output_path} --output_path {output_path} \
             --task normal"
         )
-        print("Done!")
+
+    print(f"Done! The processed data has been saved in {output_path}")
+
 
 
 if __name__ == "__main__":
