@@ -115,18 +115,33 @@ def main():
     if args.indoor:
         center = (min_vertices + max_vertices) / 2.0
         scale = 2.0 / (np.max(max_vertices - min_vertices) + 3.0)
-
         # we should normalize pose to unit cube
         poses[:, :3, 3] -= center
         poses[:, :3, 3] *= scale
-
         # inverse normalization
         scale_mat = np.eye(4).astype(np.float32)
         scale_mat[:3, 3] -= center
         scale_mat[:3] *= scale
         scale_mat = np.linalg.inv(scale_mat)
+
+        scene_box = {
+            "aabb": [[-1, -1, -1], [1, 1, 1]],
+            "near": 0.05,
+            "far": 2.5,
+            "radius": 1.0,
+            "collider_type": "box",
+        }
     else:
+        scale = 1.0
         scale_mat = np.eye(4).astype(np.float32)
+
+        scene_box = {
+            "aabb": [min_vertices.tolist(), max_vertices.tolist()],
+            "near": 0.05,
+            "far": 2.5,
+            "radius": np.min(max_vertices - min_vertices) / 2.0,
+            "collider_type": "near_far",
+        }
 
     # copy image
     sample_img = cv2.imread(str(image_paths[0]))
@@ -210,18 +225,6 @@ def main():
 
         frames.append(frame)
         out_index += 1
-
-    # scene bbox for the scannet scene
-    # TODO: box for the outdoor scene
-    if args.indoor:
-        scene_box = {
-            "aabb": [[-1, -1, -1], [1, 1, 1]],
-            "near": 0.05,
-            "far": 2.5,
-            "radius": 1.0,
-            "collider_type": "box",
-        }
-
 
     # meta data
     output_data = {
