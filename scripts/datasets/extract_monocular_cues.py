@@ -64,7 +64,7 @@ if args.task == "normal":
     # else:
     #     state_dict = checkpoint
 
-    pretrained_weights_path = root_dir + "omnidata_dpt_normal_v2.ckpt"
+    pretrained_weights_path = os.path.join(root_dir, "omnidata_dpt_normal_v2.ckpt")
     model = DPTDepthModel(backbone="vitb_rn50_384", num_channels=3)  # DPT Hybrid
     checkpoint = torch.load(pretrained_weights_path, map_location=map_location)
     if "state_dict" in checkpoint:
@@ -86,7 +86,7 @@ if args.task == "normal":
 
 elif args.task == "depth":
     image_size = 384
-    pretrained_weights_path = root_dir + "omnidata_dpt_depth_v2.ckpt"  # 'omnidata_dpt_depth_v1.ckpt'
+    pretrained_weights_path = os.path.join(root_dir, "omnidata_dpt_depth_v2.ckpt")  # 'omnidata_dpt_depth_v1.ckpt'
     # model = DPTDepthModel(backbone='vitl16_384') # DPT Large
     model = DPTDepthModel(backbone="vitb_rn50_384")  # DPT Hybrid
     checkpoint = torch.load(pretrained_weights_path, map_location=map_location)
@@ -128,7 +128,7 @@ def standardize_depth_map(img, mask_valid=None, trunc_value=0.1):
     if num_nan > 0:
         sorted_img = sorted_img[:-num_nan]
     # Remove outliers
-    trunc_img = sorted_img[int(trunc_value * len(sorted_img)) : int((1 - trunc_value) * len(sorted_img))]
+    trunc_img = sorted_img[int(trunc_value * len(sorted_img)):int((1 - trunc_value) * len(sorted_img))]
     trunc_mean = trunc_img.mean()
     trunc_var = trunc_img.var()
     eps = 1e-6
