@@ -75,8 +75,12 @@ def main(args):
 
     # === Normalize the scene ===
     if args.scene_type in ["indoor", "object"]:
+        # Enlarge bbox by 1.05 for object scene and by 5.0 for indoor scene
+        # TODO: Adaptively estimate `scene_scale_mult` based on depth-map or point-cloud prior
+        if not args.scene_scale_mult:
+            args.scene_scale_mult = 1.05 if args.scene_type == "object" else 5.0
+        scene_scale = 2.0 / (np.max(max_vertices - min_vertices) * args.scene_scale_mult)
         scene_center = (min_vertices + max_vertices) / 2.0
-        scene_scale = 2.0 / (np.max(max_vertices - min_vertices) * 1.05)
         # normalize pose to unit cube
         poses[:, :3, 3] -= scene_center
         poses[:, :3, 3] *= scene_scale
@@ -248,6 +252,9 @@ if __name__ == "__main__":
     parser.add_argument("--data-type", dest="data_type", required=True, choices=["colmap", "polycam"])
     parser.add_argument("--scene-type", dest="scene_type", required=True, choices=["indoor", "object", "unbound"],
                         help="The scene will be normalized into a unit sphere when selecting indoor or object.")
+    parser.add_argument("--scene-scale-mult", dest="scene_scale_mult", type=float, default=None,
+                        help="The bounding box of the scene is firstly calculated by the camera positions, "
+                             "then mutiply with scene_scale_mult")
 
     parser.add_argument("--sensor-depth", dest="sensor_depth", action="store_true",
                         help="Generate sensor depths from polycam.")
