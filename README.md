@@ -132,7 +132,7 @@ For a full list of included models run `ns-train --help`. Please refer to the [d
 
 Each model contains many parameters that can be changed, too many to list here. Use the `--help` command to see the full list of configuration options.
 
-**Note, that order of parameters matters! You cannot set `--machine.num-gpus` after the `--data` parameter**
+**Note, that order of parameters matters! For example, you cannot set `--machine.num-gpus` after the `--data` parameter**
 
 ```bash
 ns-train neus-facto --help
