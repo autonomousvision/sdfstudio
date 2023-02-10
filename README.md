@@ -203,8 +203,8 @@ If you use this library or find the documentation useful for your research, plea
 
 ```bibtex
 @misc{Yu2022SDFStudio,
-    author    = {Zehao Yu, Anpei Chen, Bozidar Antic, Songyou Peng, Apratim Bhattacharyya,
-                 Michael Niemeyer, Siyu Tang, Torsten Sattler, and Andreas Geiger},
+    author    = {Yu, Zehao and Chen, Anpei and Antic, Bozidar and Peng, Songyou Peng and Bhattacharyya, Apratim 
+                 and Niemeyer, Michael and Tang, Siyu and Sattler, Torsten and Geiger, Andreas},
     title     = {SDFStudio: A Unified Framework for Surface Reconstruction},
     year      = {2022},
     url       = {https://github.com/autonomousvision/sdfstudio},
