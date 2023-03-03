@@ -304,6 +304,25 @@ class SDFstudioDemoDownload(DatasetDownload):
         os.remove(download_path)
 
 
+@dataclass
+class Mipnerf360Download(DatasetDownload):
+    """Download the friends dataset."""
+
+    def download(self, save_dir: Path):
+        """Download the friends dataset."""
+
+        # https://drive.google.com/file/d/1sgKr0ZO7BQC0FYinAnRSxobIWNucAST5/view?usp=sharing
+        friends_file_id = "1sgKr0ZO7BQC0FYinAnRSxobIWNucAST5"
+
+        # Download the files
+        url = "https://data.nerf.studio/nerfstudio-data-mipnerf360.zip"
+        download_path = str(save_dir / "nerfstudio-data-mipnerf360.zip")
+        gdown.download(url, output=download_path)
+        with zipfile.ZipFile(download_path, "r") as zip_ref:
+            zip_ref.extractall(str(save_dir))
+        os.remove(download_path)
+
+
 Commands = Union[
     Annotated[BlenderDownload, tyro.conf.subcommand(name="blender")],
     Annotated[FriendsDownload, tyro.conf.subcommand(name="friends")],
@@ -312,6 +331,7 @@ Commands = Union[
     Annotated[DNerfDownload, tyro.conf.subcommand(name="dnerf")],
     Annotated[PhototourismDownload, tyro.conf.subcommand(name="phototourism")],
     Annotated[SDFstudioDemoDownload, tyro.conf.subcommand(name="sdfstudio")],
+    Annotated[Mipnerf360Download, tyro.conf.subcommand(name="mipnerf360")],
 ]
 
 
