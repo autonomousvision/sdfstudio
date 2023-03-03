@@ -56,6 +56,7 @@ DEFAULT_TIMEOUT = timedelta(minutes=30)
 
 # speedup for when input size to model doesn't change (much)
 torch.backends.cudnn.benchmark = True  # type: ignore
+torch.set_float32_matmul_precision("high")
 
 
 def _find_free_port() -> str:

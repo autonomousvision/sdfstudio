@@ -53,6 +53,7 @@ from nerfstudio.engine.schedulers import (
 )
 from nerfstudio.field_components.temporal_distortions import TemporalDistortionKind
 from nerfstudio.fields.sdf_field import SDFFieldConfig
+from nerfstudio.models.bakedsdf import BakedSDFModelConfig
 from nerfstudio.models.dto import DtoOModelConfig
 from nerfstudio.models.instant_ngp import InstantNGPModelConfig
 from nerfstudio.models.mipnerf import MipNerfModel
@@ -96,7 +97,133 @@ descriptions = {
     "neus-acc": "Implementation of NeuS with empty space skipping.",
     "neus-facto": "Implementation of NeuS similar to nerfacto where proposal sampler is used.",
     "neus-facto-bigmlp": "NeuS-facto with big MLP, it is used in training heritage data with 8 gpus",
+    "bakedsdf": "Implementation of BackedSDF with multi-res hash grids",
+    "bakedsdf-mlp": "Implementation of BackedSDF with large MLPs",
 }
+
+method_configs["bakedsdf"] = Config(
+    method_name="bakedsdf",
+    trainer=TrainerConfig(
+        steps_per_eval_image=5000,
+        steps_per_eval_batch=5000,
+        steps_per_save=20000,
+        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
+        max_num_iterations=250001,
+        mixed_precision=False,
+    ),
+    pipeline=VanillaPipelineConfig(
+        datamanager=VanillaDataManagerConfig(
+            dataparser=SDFStudioDataParserConfig(),
+            train_num_rays_per_batch=8192,
+            eval_num_rays_per_batch=1024,
+            camera_optimizer=CameraOptimizerConfig(
+                mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
+            ),
+        ),
+        model=BakedSDFModelConfig(
+            near_plane=0.2,
+            far_plane=1000.0,
+            overwrite_near_far_plane=True,
+            sdf_field=SDFFieldConfig(
+                use_grid_feature=True,
+                num_layers=2,
+                num_layers_color=2,
+                hidden_dim=256,
+                hidden_dim_color=256,
+                geometric_init=True,
+                bias=0.2,
+                beta_init=0.1,
+                inside_outside=False,
+                use_appearance_embedding=False,
+                position_encoding_max_degree=8,
+                use_diffuse_color=True,
+                use_specular_tint=True,
+                use_reflections=True,
+                use_n_dot_v=True,
+            ),
+            eikonal_loss_mult=0.01,
+            background_model="none",
+            proposal_weights_anneal_max_num_iters=1000,
+            use_anneal_beta=True,
+            eval_num_rays_per_chunk=1024,
+        ),
+    ),
+    optimizers={
+        "proposal_networks": {
+            "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
+            "scheduler": MultiStepSchedulerConfig(max_steps=250000),
+        },
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=250000),
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer",
+)
+
+
+method_configs["bakedsdf-mlp"] = Config(
+    method_name="bakedsdf-mlp",
+    trainer=TrainerConfig(
+        steps_per_eval_image=5000,
+        steps_per_eval_batch=5000,
+        steps_per_save=20000,
+        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
+        max_num_iterations=250001,
+        mixed_precision=False,
+    ),
+    pipeline=VanillaPipelineConfig(
+        datamanager=VanillaDataManagerConfig(
+            dataparser=SDFStudioDataParserConfig(),
+            train_num_rays_per_batch=4096,
+            eval_num_rays_per_batch=1024,
+            camera_optimizer=CameraOptimizerConfig(
+                mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
+            ),
+        ),
+        model=BakedSDFModelConfig(
+            near_plane=0.2,
+            far_plane=1000.0,
+            overwrite_near_far_plane=True,
+            sdf_field=SDFFieldConfig(
+                use_grid_feature=False,
+                num_layers=8,
+                num_layers_color=2,
+                hidden_dim=1024,
+                hidden_dim_color=256,
+                geometric_init=True,
+                bias=0.2,
+                beta_init=0.1,
+                inside_outside=False,
+                use_appearance_embedding=False,
+                position_encoding_max_degree=8,
+                use_diffuse_color=True,
+                use_specular_tint=True,
+                use_reflections=True,
+                use_n_dot_v=True,
+            ),
+            eikonal_loss_mult=0.01,
+            background_model="none",
+            use_anneal_beta=True,
+            proposal_weights_anneal_max_num_iters=20000,
+            eval_num_rays_per_chunk=1024,
+        ),
+    ),
+    optimizers={
+        "proposal_networks": {
+            "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
+            "scheduler": MultiStepSchedulerConfig(max_steps=250000),
+        },
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=0.002, eps=1e-15),
+            "scheduler": NeuSSchedulerConfig(warm_up_end=500, learning_rate_alpha=0.05, max_steps=250000),
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer",
+)
+
 
 method_configs["neus-facto"] = Config(
     method_name="neus-facto",
