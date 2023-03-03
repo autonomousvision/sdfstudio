@@ -19,6 +19,7 @@ Field for compound nerf model, adds scene contraction and image embeddings to in
 from dataclasses import dataclass, field
 from typing import Optional, Type, Union
 
+import math
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -151,6 +152,19 @@ class SDFFieldConfig(FieldConfig):
     beta_init: float = 0.1
     """Init learnable beta value for transformation of sdf to density"""
     encoding_type: Literal["hash", "periodic", "tensorf_vm"] = "hash"
+    """feature grid encoding type"""
+    position_encoding_max_degree: int = 6
+    """positional encoding max degree"""
+    use_diffuse_color: bool = False
+    """whether to use diffuse color as in ref-nerf"""
+    use_specular_tint: bool = False
+    """whether to use specular tint as in ref-nerf"""
+    use_reflections: bool = False
+    """whether to use reflections as in ref-nerf"""
+    use_n_dot_v: bool = False
+    """whether to use n dot v as in ref-nerf"""
+    rgb_padding: float = 0.001
+    """Padding added to the RGB outputs"""
 
 
 class SDFField(Field):
@@ -221,10 +235,13 @@ class SDFField(Field):
             print("using tensor vm")
             self.encoding = TensorVMEncoding(128, 24, smoothstep=smoothstep)
 
-        # TODO make this configurable
         # we concat inputs position ourselves
         self.position_encoding = NeRFEncoding(
-            in_dim=3, num_frequencies=6, min_freq_exp=0.0, max_freq_exp=5.0, include_input=False
+            in_dim=3,
+            num_frequencies=self.config.position_encoding_max_degree,
+            min_freq_exp=0.0,
+            max_freq_exp=self.config.position_encoding_max_degree - 1,
+            include_input=False,
         )
 
         self.direction_encoding = NeRFEncoding(
@@ -281,22 +298,40 @@ class SDFField(Field):
         # deviation_network to compute alpha from sdf from NeuS
         self.deviation_network = SingleVarianceNetwork(init_val=self.config.beta_init)
 
-        # color network
+        # diffuse and specular tint layer
+        if self.config.use_diffuse_color:
+            self.diffuse_color_pred = nn.Linear(self.config.geo_feat_dim, 3)
+        if self.config.use_specular_tint:
+            self.specular_tint_pred = nn.Linear(self.config.geo_feat_dim, 3)
+
+        # view dependent color network
         dims = [self.config.hidden_dim_color for _ in range(self.config.num_layers_color)]
-        # point, view_direction, normal, feature, embedding
-        in_dim = (
-            3
-            + self.direction_encoding.get_out_dim()
-            + 3
-            + self.config.geo_feat_dim
-            + self.embedding_appearance.get_out_dim()
-        )
+        if self.config.use_diffuse_color:
+            in_dim = (
+                self.direction_encoding.get_out_dim()
+                + self.config.geo_feat_dim
+                + self.embedding_appearance.get_out_dim()
+            )
+        else:
+            # point, view_direction, normal, feature, embedding
+            in_dim = (
+                3
+                + self.direction_encoding.get_out_dim()
+                + 3
+                + self.config.geo_feat_dim
+                + self.embedding_appearance.get_out_dim()
+            )
+        if self.config.use_n_dot_v:
+            in_dim += 1
+
         dims = [in_dim] + dims + [3]
         self.num_layers_color = len(dims)
 
         for l in range(0, self.num_layers_color - 1):
             out_dim = dims[l + 1]
             lin = nn.Linear(dims[l], out_dim)
+            torch.nn.init.kaiming_uniform_(lin.weight.data)
+            torch.nn.init.zeros_(lin.bias.data)
 
             if self.config.weight_norm:
                 lin = nn.utils.weight_norm(lin)
@@ -316,14 +351,8 @@ class SDFField(Field):
     def forward_geonetwork(self, inputs):
         """forward the geonetwork"""
         if self.use_grid_feature:
-            # TODO check how we should normalize the points
-            # normalize point range as encoding assume points are in [-1, 1]
-            # positions = inputs / self.divide_factor
-            positions = self.spatial_distortion(inputs)
-
-            positions = (positions + 1.0) / 2.0
+            positions = (inputs + 2.0) / 4.0
             feature = self.encoding(positions)
-            # raise NotImplementedError
         else:
             feature = torch.zeros_like(inputs[:, :1].repeat(1, self.encoding.n_output_dims))
 
@@ -355,7 +384,12 @@ class SDFField(Field):
 
     def gradient(self, x):
         """compute the gradient of the ray"""
+        if self.spatial_distortion is not None:
+            x = self.spatial_distortion(x)
+
+        # compute gradient in constracted space
         x.requires_grad_(True)
+
         y = self.forward_geonetwork(x)[:, :1]
         d_output = torch.ones_like(y, requires_grad=False, device=y.device)
         gradients = torch.autograd.grad(
@@ -430,7 +464,21 @@ class SDFField(Field):
 
     def get_colors(self, points, directions, normals, geo_features, camera_indices):
         """compute colors"""
-        d = self.direction_encoding(directions)
+
+        # diffuse color and specular tint
+        if self.config.use_diffuse_color:
+            raw_rgb_diffuse = self.diffuse_color_pred(geo_features.view(-1, self.config.geo_feat_dim))
+        if self.config.use_specular_tint:
+            tint = self.sigmoid(self.specular_tint_pred(geo_features.view(-1, self.config.geo_feat_dim)))
+
+        normals = F.normalize(normals, p=2, dim=-1)
+
+        if self.config.use_reflections:
+            # https://github.com/google-research/multinerf/blob/5d4c82831a9b94a87efada2eee6a993d530c4226/internal/ref_utils.py#L22
+            refdirs = 2.0 * torch.sum(normals * directions, axis=-1, keepdims=True) * normals - directions
+            d = self.direction_encoding(refdirs)
+        else:
+            d = self.direction_encoding(directions)
 
         # appearance
         if self.training:
@@ -447,17 +495,26 @@ class SDFField(Field):
                 embedded_appearance = torch.zeros(
                     (*directions.shape[:-1], self.config.appearance_embedding_dim), device=directions.device
                 )
-
-        h = torch.cat(
-            [
+        if self.config.use_diffuse_color:
+            h = [
+                d,
+                geo_features.view(-1, self.config.geo_feat_dim),
+                embedded_appearance.view(-1, self.config.appearance_embedding_dim),
+            ]
+        else:
+            h = [
                 points,
                 d,
                 normals,
                 geo_features.view(-1, self.config.geo_feat_dim),
                 embedded_appearance.view(-1, self.config.appearance_embedding_dim),
-            ],
-            dim=-1,
-        )
+            ]
+
+        if self.config.use_n_dot_v:
+            n_dot_v = torch.sum(normals * directions, dim=-1, keepdims=True)
+            h.append(n_dot_v)
+
+        h = torch.cat(h, dim=-1)
 
         for l in range(0, self.num_layers_color - 1):
             lin = getattr(self, "clin" + str(l))
@@ -469,8 +526,21 @@ class SDFField(Field):
 
         rgb = self.sigmoid(h)
 
-        # unisurf
-        # rgb = self.tanh(h) * 0.5 + 0.5
+        if self.config.use_diffuse_color:
+            # Initialize linear diffuse color around 0.25, so that the combined
+            # linear color is initialized around 0.5.
+            diffuse_linear = self.sigmoid(raw_rgb_diffuse - math.log(3.0))
+            if self.config.use_specular_tint:
+                specular_linear = tint * rgb
+            else:
+                specular_linear = 0.5 * rgb
+
+            # TODO linear to srgb?
+            # Combine specular and diffuse components and tone map to sRGB.
+            rgb = torch.clamp(specular_linear + diffuse_linear, 0.0, 1.0)
+
+        # Apply padding, mapping color to [-rgb_padding, 1+rgb_padding].
+        rgb = rgb * (1 + 2 * self.config.rgb_padding) - self.config.rgb_padding
 
         return rgb
 
@@ -489,6 +559,10 @@ class SDFField(Field):
         directions = ray_samples.frustums.directions
         directions_flat = directions.reshape(-1, 3)
 
+        if self.spatial_distortion is not None:
+            inputs = self.spatial_distortion(inputs)
+
+        # compute gradient in constracted space
         inputs.requires_grad_(True)
         with torch.enable_grad():
             h = self.forward_geonetwork(inputs)
