@@ -212,3 +212,124 @@ def get_surface_occupancy(
         meshexport.export(str(output_path))
     else:
         print("=================================================no surface skip")
+
+
+def get_surface_sliding_with_contraction(
+    sdf,
+    resolution=512,
+    bounding_box_min=(-1.0, -1.0, -1.0),
+    bounding_box_max=(1.0, 1.0, 1.0),
+    return_mesh=False,
+    level=0,
+    coarse_mask=None,
+    output_path: Path = Path("test.ply"),
+    simplify_mesh=True,
+    inv_contraction=None,
+    max_range=32.0,
+):
+    assert resolution % 512 == 0
+
+    resN = resolution
+    cropN = 512
+    level = 0
+    N = resN // cropN
+
+    grid_min = bounding_box_min
+    grid_max = bounding_box_max
+    xs = np.linspace(grid_min[0], grid_max[0], N + 1)
+    ys = np.linspace(grid_min[1], grid_max[1], N + 1)
+    zs = np.linspace(grid_min[2], grid_max[2], N + 1)
+
+    # print(xs)
+    # print(ys)
+    # print(zs)
+    meshes = []
+    for i in range(N):
+        for j in range(N):
+            for k in range(N):
+                print(i, j, k)
+                x_min, x_max = xs[i], xs[i + 1]
+                y_min, y_max = ys[j], ys[j + 1]
+                z_min, z_max = zs[k], zs[k + 1]
+
+                x = np.linspace(x_min, x_max, cropN)
+                y = np.linspace(y_min, y_max, cropN)
+                z = np.linspace(z_min, z_max, cropN)
+
+                xx, yy, zz = np.meshgrid(x, y, z, indexing="ij")
+                points = torch.tensor(np.vstack([xx.ravel(), yy.ravel(), zz.ravel()]).T, dtype=torch.float).cuda()
+
+                @torch.no_grad()
+                def evaluate(points):
+                    z = []
+                    for _, pnts in enumerate(torch.split(points, 100000, dim=0)):
+                        z.append(sdf(pnts))
+                    z = torch.cat(z, axis=0)
+                    return z
+
+                # construct point pyramids
+                points = points.reshape(cropN, cropN, cropN, 3)
+
+                # query coarse grids
+                points_tmp = points[None].cuda() * 0.5  # normalize from [-2, 2] to [-1, 1]
+                current_mask = torch.nn.functional.grid_sample(coarse_mask, points_tmp, mode="nearest")
+
+                points = points.reshape(-1, 3)
+                valid_mask = current_mask.reshape(-1) > 0
+                pts_to_eval = points[valid_mask]
+                print(current_mask.float().mean())
+
+                # breakpoint()
+                pts_sdf = torch.ones_like(points[..., 0])
+                print(pts_sdf.shape, pts_to_eval.shape, points.shape)
+                if pts_to_eval.shape[0] > 0:
+                    pts_sdf_eval = evaluate(pts_to_eval.contiguous())
+                    pts_sdf[valid_mask.reshape(-1)] = pts_sdf_eval
+
+                z = pts_sdf.detach().cpu().numpy()
+
+                current_mask = (current_mask > 0.0).cpu().numpy()[0, 0]
+                # skip if no surface found
+                if current_mask is not None:
+                    valid_z = z.reshape(cropN, cropN, cropN)[current_mask]
+                    if valid_z.shape[0] <= 0 or (np.min(valid_z) > level or np.max(valid_z) < level):
+                        continue
+
+                if not (np.min(z) > level or np.max(z) < level):
+                    z = z.astype(np.float32)
+                    verts, faces, normals, _ = measure.marching_cubes(
+                        volume=z.reshape(cropN, cropN, cropN),  # .transpose([1, 0, 2]),
+                        level=level,
+                        spacing=(
+                            (x_max - x_min) / (cropN - 1),
+                            (y_max - y_min) / (cropN - 1),
+                            (z_max - z_min) / (cropN - 1),
+                        ),
+                        mask=current_mask,
+                    )
+                    verts = verts + np.array([x_min, y_min, z_min])
+
+                    meshcrop = trimesh.Trimesh(verts, faces, normals)
+                    meshes.append(meshcrop)
+
+    combined = trimesh.util.concatenate(meshes)
+
+    # inverse contraction and clipping the points range
+    if inv_contraction is not None:
+        combined.vertices = inv_contraction(torch.from_numpy(combined.vertices)).numpy()
+        combined.vertices = np.clip(combined.vertices, -max_range, max_range)
+
+    if return_mesh:
+        return combined
+    else:
+        filename = str(output_path)
+        filename_simplify = str(output_path).replace(".ply", "-simplify.ply")
+
+        combined.export(filename)
+        if simplify_mesh:
+            ms = pymeshlab.MeshSet()
+            ms.load_new_mesh(filename)
+
+            print("simply mesh")
+            ms.meshing_decimation_quadric_edge_collapse(targetfacenum=2000000)
+            ms.save_current_mesh(filename_simplify, save_face_color=False)

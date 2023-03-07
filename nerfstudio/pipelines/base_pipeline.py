@@ -364,6 +364,55 @@ class VanillaPipeline(Pipeline):
         self.train()
         return metrics_dict
 
+    @profiler.time_function
+    def get_visibility_mask(self):
+        """Iterate over all the images in the eval dataset and get the average.
+
+        Returns:
+            metrics_dict: dictionary of metrics
+        """
+        self.eval()
+
+        coarse_mask = torch.ones((1, 1, 512, 512, 512), requires_grad=True).to(self.device)
+        coarse_mask.retain_grad()
+
+        num_images = len(self.datamanager.fixed_indices_eval_dataloader)
+        with Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TimeElapsedColumn(),
+            MofNCompleteColumn(),
+            transient=True,
+        ) as progress:
+            task = progress.add_task("[green]Evaluating all eval images...", total=num_images)
+            for camera_ray_bundle, batch in self.datamanager.fixed_indices_eval_dataloader:
+                isbasicimages = False
+                if isinstance(
+                    batch["image"], BasicImages
+                ):  # If this is a generalized dataset, we need to get image tensor
+                    isbasicimages = True
+                    batch["image"] = batch["image"].images[0]
+                    camera_ray_bundle = camera_ray_bundle.reshape((*batch["image"].shape[:-1],))
+                # downsample by factor of 4 to speed up
+                camera_ray_bundle = camera_ray_bundle[::4, ::4]
+                height, width = camera_ray_bundle.shape
+                outputs = self.model.get_outputs_for_camera_ray_bundle(camera_ray_bundle)
+                ray_points = outputs["ray_points"].reshape(height, width, -1, 3)
+                weights = outputs["weights"]
+
+                valid_points = ray_points.reshape(-1, 3)[weights.reshape(-1) > 0.005]
+                valid_points = valid_points * 0.5  # normalize from [-2, 2] to [-1, 1]
+                # update mask based on ray samples
+                with torch.enable_grad():
+                    out = torch.nn.functional.grid_sample(coarse_mask, valid_points[None, None, None])
+                    out.sum().backward()
+                progress.advance(task)
+
+        coarse_mask = (coarse_mask.grad > 0.0001).float()
+
+        self.train()
+        return coarse_mask
+
     def load_pipeline(self, loaded_state: Dict[str, Any]) -> None:
         """Load the checkpoint from the given path
 

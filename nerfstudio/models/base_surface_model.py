@@ -292,6 +292,9 @@ class SurfaceModel(Model):
             "depth": depth,
             "normal": normal,
             "weights": weights,
+            "ray_points": self.scene_contraction(
+                ray_samples.frustums.get_start_positions()
+            ),  # used for creating visiblity mask
             "directions_norm": ray_bundle.directions_norm,  # used to scale z_vals for free space and sdf loss
         }
         outputs.update(bg_outputs)
