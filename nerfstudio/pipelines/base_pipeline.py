@@ -376,7 +376,7 @@ class VanillaPipeline(Pipeline):
         coarse_mask = torch.ones((1, 1, 512, 512, 512), requires_grad=True).to(self.device)
         coarse_mask.retain_grad()
 
-        num_images = len(self.datamanager.fixed_indices_eval_dataloader)
+        num_images = len(self.datamanager.fixed_indices_train_dataloader)
         with Progress(
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
@@ -385,7 +385,7 @@ class VanillaPipeline(Pipeline):
             transient=True,
         ) as progress:
             task = progress.add_task("[green]Evaluating all eval images...", total=num_images)
-            for camera_ray_bundle, batch in self.datamanager.fixed_indices_eval_dataloader:
+            for camera_ray_bundle, batch in self.datamanager.fixed_indices_train_dataloader:
                 isbasicimages = False
                 if isinstance(
                     batch["image"], BasicImages

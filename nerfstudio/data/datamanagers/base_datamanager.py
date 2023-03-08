@@ -38,16 +38,20 @@ from nerfstudio.configs.base_config import InstantiateConfig
 from nerfstudio.data.dataparsers.blender_dataparser import BlenderDataParserConfig
 from nerfstudio.data.dataparsers.dnerf_dataparser import DNeRFDataParserConfig
 from nerfstudio.data.dataparsers.friends_dataparser import FriendsDataParserConfig
-from nerfstudio.data.dataparsers.instant_ngp_dataparser import InstantNGPDataParserConfig
+from nerfstudio.data.dataparsers.heritage_dataparser import HeritageDataParserConfig
+from nerfstudio.data.dataparsers.instant_ngp_dataparser import (
+    InstantNGPDataParserConfig,
+)
 from nerfstudio.data.dataparsers.mipnerf360_dataparser import Mipnerf360DataParserConfig
+from nerfstudio.data.dataparsers.monosdf_dataparser import MonoSDFDataParserConfig
 from nerfstudio.data.dataparsers.nerfstudio_dataparser import NerfstudioDataParserConfig
 from nerfstudio.data.dataparsers.nuscenes_dataparser import NuScenesDataParserConfig
-from nerfstudio.data.dataparsers.phototourism_dataparser import PhototourismDataParserConfig
-from nerfstudio.data.dataparsers.heritage_dataparser import HeritageDataParserConfig
+from nerfstudio.data.dataparsers.phototourism_dataparser import (
+    PhototourismDataParserConfig,
+)
 from nerfstudio.data.dataparsers.record3d_dataparser import Record3DDataParserConfig
 from nerfstudio.data.dataparsers.sdfstudio_dataparser import SDFStudioDataParserConfig
-from nerfstudio.data.dataparsers.monosdf_dataparser import MonoSDFDataParserConfig
-from nerfstudio.data.datasets.base_dataset import InputDataset, GeneralizedDataset
+from nerfstudio.data.datasets.base_dataset import GeneralizedDataset, InputDataset
 from nerfstudio.data.pixel_samplers import EquirectangularPixelSampler, PixelSampler
 from nerfstudio.data.utils.dataloaders import (
     CacheDataloader,
@@ -372,6 +376,13 @@ class VanillaDataManager(DataManager):  # pylint: disable=abstract-method
         self.train_ray_generator = RayGenerator(
             self.train_dataset.cameras.to(self.device),
             self.train_camera_optimizer,
+        )
+        # for loading full images
+        self.fixed_indices_train_dataloader = FixedIndicesEvalDataloader(
+            input_dataset=self.train_dataset,
+            device=self.device,
+            num_workers=self.world_size * 2,
+            shuffle=False,
         )
 
     def setup_eval(self):
