@@ -109,7 +109,13 @@ class NeRFEncoding(Encoding):
     """
 
     def __init__(
-        self, in_dim: int, num_frequencies: int, min_freq_exp: float, max_freq_exp: float, include_input: bool = False
+        self,
+        in_dim: int,
+        num_frequencies: int,
+        min_freq_exp: float,
+        max_freq_exp: float,
+        include_input: bool = False,
+        off_axis: bool = False,
     ) -> None:
         super().__init__(in_dim)
 
@@ -118,10 +124,42 @@ class NeRFEncoding(Encoding):
         self.max_freq = max_freq_exp
         self.include_input = include_input
 
+        self.off_axis = off_axis
+
+        self.P = torch.tensor(
+            [
+                [0.8506508, 0, 0.5257311],
+                [0.809017, 0.5, 0.309017],
+                [0.5257311, 0.8506508, 0],
+                [1, 0, 0],
+                [0.809017, 0.5, -0.309017],
+                [0.8506508, 0, -0.5257311],
+                [0.309017, 0.809017, -0.5],
+                [0, 0.5257311, -0.8506508],
+                [0.5, 0.309017, -0.809017],
+                [0, 1, 0],
+                [-0.5257311, 0.8506508, 0],
+                [-0.309017, 0.809017, -0.5],
+                [0, 0.5257311, 0.8506508],
+                [-0.309017, 0.809017, 0.5],
+                [0.309017, 0.809017, 0.5],
+                [0.5, 0.309017, 0.809017],
+                [0.5, -0.309017, 0.809017],
+                [0, 0, 1],
+                [-0.5, 0.309017, 0.809017],
+                [-0.809017, 0.5, 0.309017],
+                [-0.809017, 0.5, -0.309017],
+            ]
+        ).T
+
     def get_out_dim(self) -> int:
         if self.in_dim is None:
             raise ValueError("Input dimension has not been set")
         out_dim = self.in_dim * self.num_frequencies * 2
+
+        if self.off_axis:
+            out_dim = self.P.shape[1] * self.num_frequencies * 2
+
         if self.include_input:
             out_dim += self.in_dim
         return out_dim
@@ -150,7 +188,10 @@ class NeRFEncoding(Encoding):
         #     torch.linspace(self.min_freq, 1.0, self.num_frequencies).to(in_tensor.device) ** 0.2 * self.max_freq
         # )
 
-        scaled_inputs = in_tensor[..., None] * freqs  # [..., "input_dim", "num_scales"]
+        if self.off_axis:
+            scaled_inputs = torch.matmul(in_tensor, self.P.to(in_tensor.device))[..., None] * freqs
+        else:
+            scaled_inputs = in_tensor[..., None] * freqs  # [..., "input_dim", "num_scales"]
         scaled_inputs = scaled_inputs.view(*scaled_inputs.shape[:-2], -1)  # [..., "input_dim" * "num_scales"]
 
         if covs is None:

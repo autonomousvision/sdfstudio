@@ -16,10 +16,10 @@
 Field for compound nerf model, adds scene contraction and image embeddings to instant ngp
 """
 
+import math
 from dataclasses import dataclass, field
 from typing import Optional, Type, Union
 
-import math
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -165,6 +165,8 @@ class SDFFieldConfig(FieldConfig):
     """whether to use n dot v as in ref-nerf"""
     rgb_padding: float = 0.001
     """Padding added to the RGB outputs"""
+    off_axis: bool = False
+    """whether to use off axis encoding from mipnerf360"""
 
 
 class SDFField(Field):
@@ -242,6 +244,7 @@ class SDFField(Field):
             min_freq_exp=0.0,
             max_freq_exp=self.config.position_encoding_max_degree - 1,
             include_input=False,
+            off_axis=self.config.off_axis,
         )
 
         self.direction_encoding = NeRFEncoding(
