@@ -19,9 +19,9 @@ Implementation of BakedSDF.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Type, Tuple, Dict
-import numpy as np
+from typing import Dict, List, Tuple, Type
 
+import numpy as np
 import torch
 from torch.nn import Parameter
 
@@ -32,10 +32,10 @@ from nerfstudio.engine.callbacks import (
     TrainingCallbackLocation,
 )
 from nerfstudio.field_components.field_heads import FieldHeadNames
-from nerfstudio.models.volsdf import VolSDFModel, VolSDFModelConfig
 from nerfstudio.fields.density_fields import HashMLPDensityField
 from nerfstudio.model_components.losses import interlevel_loss
 from nerfstudio.model_components.ray_samplers import ProposalNetworkSampler
+from nerfstudio.models.volsdf import VolSDFModel, VolSDFModelConfig
 from nerfstudio.utils import colormaps
 
 
@@ -76,6 +76,10 @@ class BakedSDFModelConfig(VolSDFModelConfig):
     use_anneal_beta: bool = True
     """whether to use anneal beta"""
     beta_anneal_max_num_iters: int = 250000
+    """Max num iterations for the annealing of beta in laplacian density."""
+    use_anneal_eikonal_weight: bool = False
+    """whether to use annealing for eikonal loss weight"""
+    eikonal_anneal_max_num_iters: int = 250000
     """Max num iterations for the annealing of beta in laplacian density."""
 
 
@@ -192,6 +196,26 @@ class BakedSDFFactoModel(VolSDFModel):
                 )
             )
 
+        if self.config.use_anneal_eikonal_weight:
+            # anneal the beta of volsdf before each training iterations
+            K = self.config.eikonal_anneal_max_num_iters
+            weight_init = 0.01
+            weight_end = 0.1
+
+            def set_weight(step):
+                # bakedsdf's beta schedule
+                train_frac = np.clip(step / K, 0, 1)
+                mult = weight_end / (1 + (weight_end - weight_init) / weight_init * ((1.0 - train_frac) ** 10))
+                self.config.eikonal_loss_mult = mult
+
+            callbacks.append(
+                TrainingCallback(
+                    where_to_run=[TrainingCallbackLocation.BEFORE_TRAIN_ITERATION],
+                    update_every_num_iters=1,
+                    func=set_weight,
+                )
+            )
+
         return callbacks
 
     def sample_and_forward_field(self, ray_bundle: RayBundle):
@@ -223,14 +247,7 @@ class BakedSDFFactoModel(VolSDFModel):
         if self.training:
             # eikonal loss
             grad_theta = outputs["eik_grad"]
-            # pick the points that contribute most to rendering and also choose a random one?
-            # only apply eikonal_loss to points that contribute to rendering
-            valid_grad = (outputs["weights"] > 1e-4).float()[..., 0]
-            loss_dict["eikonal_loss"] = (
-                torch.sum(((grad_theta.norm(2, dim=-1) - 1) ** 2) * valid_grad)
-                / (valid_grad.sum() + 1e-6)
-                * self.config.eikonal_loss_mult
-            )
+            loss_dict["eikonal_loss"] = ((grad_theta.norm(2, dim=-1) - 1) ** 2).mean() * self.config.eikonal_loss_mult
 
             loss_dict["interlevel_loss"] = self.config.interlevel_loss_mult * interlevel_loss(
                 outputs["weights_list"], outputs["ray_samples_list"]
@@ -251,3 +268,8 @@ class BakedSDFFactoModel(VolSDFModel):
             images_dict[key] = prop_depth_i
 
         return metrics_dict, images_dict
+
+    def get_metrics_dict(self, outputs, batch) -> Dict:
+        metric_dict = super().get_metrics_dict(outputs, batch)
+        metric_dict["eikonal_loss_mult"] = self.config.eikonal_loss_mult
+        return metric_dict
