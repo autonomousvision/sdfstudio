@@ -365,7 +365,12 @@ class VanillaPipeline(Pipeline):
         return metrics_dict
 
     @profiler.time_function
-    def get_visibility_mask(self):
+    def get_visibility_mask(
+        self,
+        coarse_grid_resolution: int = 512,
+        valid_points_thres: float = 0.005,
+        sub_sample_factor: int = 8,
+    ):
         """Iterate over all the images in the eval dataset and get the average.
 
         Returns:
@@ -373,7 +378,9 @@ class VanillaPipeline(Pipeline):
         """
         self.eval()
 
-        coarse_mask = torch.ones((1, 1, 512, 512, 512), requires_grad=True).to(self.device)
+        coarse_mask = torch.ones(
+            (1, 1, coarse_grid_resolution, coarse_grid_resolution, coarse_grid_resolution), requires_grad=True
+        ).to(self.device)
         coarse_mask.retain_grad()
 
         num_images = len(self.datamanager.fixed_indices_train_dataloader)
@@ -394,13 +401,13 @@ class VanillaPipeline(Pipeline):
                     batch["image"] = batch["image"].images[0]
                     camera_ray_bundle = camera_ray_bundle.reshape((*batch["image"].shape[:-1],))
                 # downsample by factor of 4 to speed up
-                camera_ray_bundle = camera_ray_bundle[::4, ::4]
+                camera_ray_bundle = camera_ray_bundle[::sub_sample_factor, ::sub_sample_factor]
                 height, width = camera_ray_bundle.shape
                 outputs = self.model.get_outputs_for_camera_ray_bundle(camera_ray_bundle)
                 ray_points = outputs["ray_points"].reshape(height, width, -1, 3)
                 weights = outputs["weights"]
 
-                valid_points = ray_points.reshape(-1, 3)[weights.reshape(-1) > 0.005]
+                valid_points = ray_points.reshape(-1, 3)[weights.reshape(-1) > valid_points_thres]
                 valid_points = valid_points * 0.5  # normalize from [-2, 2] to [-1, 1]
                 # update mask based on ray samples
                 with torch.enable_grad():

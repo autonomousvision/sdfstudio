@@ -51,6 +51,12 @@ class ExtractMesh:
     create_visibility_mask: bool = False
     """save visibility grid"""
     save_visibility_grid: bool = False
+    """visibility grid resolution"""
+    visibility_grid_resolution: int = 512
+    """threshold for considering a points is valid when splat to visibility grid"""
+    valid_points_thres: float = 0.005
+    """sub samples factor of images when creating visibility grid"""
+    sub_sample_factor: int = 8
 
     def main(self) -> None:
         """Main function."""
@@ -64,7 +70,9 @@ class ExtractMesh:
         if self.create_visibility_mask:
             assert self.resolution % 512 == 0
 
-            coarse_mask = pipeline.get_visibility_mask()
+            coarse_mask = pipeline.get_visibility_mask(
+                self.visibility_grid_resolution, self.valid_points_thres, self.sub_sample_factor
+            )
 
             # TODO reading contraction type from pipeline
             def inv_contract(x, order=float("inf")):
