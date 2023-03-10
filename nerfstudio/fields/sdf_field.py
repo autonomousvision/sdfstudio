@@ -390,7 +390,7 @@ class SDFField(Field):
         if self.spatial_distortion is not None:
             x = self.spatial_distortion(x)
 
-        # compute gradient in constracted space
+        # compute gradient in contracted space
         x.requires_grad_(True)
 
         y = self.forward_geonetwork(x)[:, :1]
