@@ -181,6 +181,9 @@ class SDFStudio(DataParser):
         # subsample to avoid out-of-memory for validation set
         if split != "train" and self.config.skip_every_for_val_split >= 1:
             indices = indices[:: self.config.skip_every_for_val_split]
+        else:
+            # training set should not contain any image in validation set
+            indices = [i for i in indices if i % self.config.skip_every_for_val_split != 0]
 
         image_filenames = []
         depth_images = []
