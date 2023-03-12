@@ -20,9 +20,14 @@ from scipy.interpolate import interp1d
 from scipy.spatial.transform import Rotation, Slerp
 from typing_extensions import Literal, assert_never
 
-from nerfstudio.cameras.camera_paths import get_path_from_json, get_spiral_path
+from nerfstudio.cameras.camera_paths import (
+    generate_ellipse_path,
+    get_path_from_json,
+    get_spiral_path,
+)
 from nerfstudio.cameras.cameras import Cameras
 from nerfstudio.configs.base_config import Config  # pylint: disable=unused-import
+from nerfstudio.data.datamanagers.base_datamanager import AnnotatedDataParserUnion
 from nerfstudio.data.dataparsers.sdfstudio_dataparser import SDFStudioDataParserConfig
 from nerfstudio.utils import install_checks
 
@@ -174,7 +179,7 @@ def _render_trajectory_video(
     vis.run()
     if output_format == "video":
         fps = len(rendered_images) / seconds
-        rendered_images = rendered_images + rendered_images[::-1]
+        # rendered_images = rendered_images + rendered_images[::-1]
         media.write_video(output_filename, rendered_images, fps=fps)
 
 
@@ -187,7 +192,7 @@ class RenderTrajectory:
     # Name of the renderer outputs to use. rgb, depth, etc. concatenates them along y axis
     rendered_output_names: List[str] = field(default_factory=lambda: ["rgb", "normal"])
     #  Trajectory to render.
-    traj: Literal["spiral", "filename", "interpolate"] = "spiral"
+    traj: Literal["spiral", "filename", "interpolate", "ellipse"] = "spiral"
     # Scaling factor to apply to the camera image resolution.
     downscale_factor: int = 1
     # Filename of the camera path to render.
@@ -196,11 +201,13 @@ class RenderTrajectory:
     output_path: Path = Path("renders/output.mp4")
     # How long the video should be.
     seconds: float = 5.0
+    # pfs of the video
+    fps: int = 24
     # How to save output data.
     output_format: Literal["images", "video"] = "video"
     merge_type: Literal["half", "concat"] = "half"
 
-    data: SDFStudioDataParserConfig = SDFStudioDataParserConfig()
+    data: AnnotatedDataParserUnion = SDFStudioDataParserConfig()
     num_views: int = 300
 
     def main(self) -> None:
@@ -225,6 +232,10 @@ class RenderTrajectory:
             outputs = self.data.setup()._generate_dataparser_outputs()
             camera_path = get_spiral_path(camera=outputs.cameras, steps=self.num_views, radius=1.0)
             seconds = camera_path.size / 24
+        elif self.traj == "ellipse":
+            outputs = self.data.setup()._generate_dataparser_outputs()
+            camera_path = generate_ellipse_path(cameras=outputs.cameras, n_frames=self.num_views, const_speed=False)
+            seconds = camera_path.size / self.fps
         else:
             assert_never(self.traj)
 
