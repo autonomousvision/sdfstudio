@@ -164,6 +164,8 @@ class SDFStudioDataParserConfig(DataParserConfig):
     the last element is the most similar to the first (ref)"""
     skip_every_for_val_split: int = 1
     """sub sampling validation images"""
+    train_val_no_overlap: bool = False
+    """remove selected / sampled validation images from training set"""
     auto_orient: bool = False
 
 
@@ -182,8 +184,9 @@ class SDFStudio(DataParser):
         if split != "train" and self.config.skip_every_for_val_split >= 1:
             indices = indices[:: self.config.skip_every_for_val_split]
         else:
-            # training set should not contain any image in validation set
-            indices = [i for i in indices if i % self.config.skip_every_for_val_split != 0]
+            # if you use this option, training set should not contain any image in validation set
+            if self.config.train_val_no_split:
+                indices = [i for i in indices if i % self.config.skip_every_for_val_split != 0]
 
         image_filenames = []
         depth_images = []
