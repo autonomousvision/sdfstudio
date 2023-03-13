@@ -74,9 +74,8 @@ class ExtractMesh:
                 self.visibility_grid_resolution, self.valid_points_thres, self.sub_sample_factor
             )
 
-            # TODO reading contraction type from pipeline
-            def inv_contract(x, order=float("inf")):
-                mag = torch.linalg.norm(x, ord=order, dim=-1)
+            def inv_contract(x):
+                mag = torch.linalg.norm(x, ord=pipeline.model.scene_contraction.order, dim=-1)
                 mask = mag >= 1
                 x_new = x.clone()
                 x_new[mask] = (1 / (2 - mag[mask][..., None])) * (x[mask] / mag[mask][..., None])

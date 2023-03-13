@@ -8,6 +8,7 @@ from skimage import measure
 
 avg_pool_3d = torch.nn.AvgPool3d(2, stride=2)
 upsample = torch.nn.Upsample(scale_factor=2, mode="nearest")
+max_pool_3d = torch.nn.MaxPool3d(3, stride=1, padding=1)
 
 
 @torch.no_grad()
@@ -272,19 +273,23 @@ def get_surface_sliding_with_contraction(
 
                 # query coarse grids
                 points_tmp = points[None].cuda() * 0.5  # normalize from [-2, 2] to [-1, 1]
-                current_mask = torch.nn.functional.grid_sample(coarse_mask, points_tmp, mode="nearest")
+                current_mask = torch.nn.functional.grid_sample(coarse_mask, points_tmp)
 
                 points = points.reshape(-1, 3)
                 valid_mask = current_mask.reshape(-1) > 0
                 pts_to_eval = points[valid_mask]
                 print(current_mask.float().mean())
 
-                # breakpoint()
-                pts_sdf = torch.ones_like(points[..., 0])
+                pts_sdf = torch.ones_like(points[..., 0]) * 100.0
                 print(pts_sdf.shape, pts_to_eval.shape, points.shape)
                 if pts_to_eval.shape[0] > 0:
                     pts_sdf_eval = evaluate(pts_to_eval.contiguous())
                     pts_sdf[valid_mask.reshape(-1)] = pts_sdf_eval
+
+                # use min_pooling to remove masked marching cube artefacts
+                min_sdf = max_pool_3d(pts_sdf.reshape(1, 1, cropN, cropN, cropN) * -1.0) * -1.0
+                min_mask = (current_mask > 0.0).float()
+                pts_sdf = pts_sdf.reshape(1, 1, cropN, cropN, cropN) * min_mask + min_sdf * (1.0 - min_mask)
 
                 z = pts_sdf.detach().cpu().numpy()
 

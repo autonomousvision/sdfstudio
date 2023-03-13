@@ -118,6 +118,8 @@ class SurfaceModelConfig(ModelConfig):
     """Total variational loss mutliplier"""
     overwrite_near_far_plane: bool = False
     """whether to use near and far collider from command line"""
+    scene_contraction_norm: Literal["inf", "l2"] = "inf"
+    """Which norm to use for the scene contraction."""
 
 
 class SurfaceModel(Model):
@@ -132,8 +134,15 @@ class SurfaceModel(Model):
     def populate_modules(self):
         """Set the fields and modules."""
         super().populate_modules()
-
-        self.scene_contraction = SceneContraction(order=float("inf"))
+        
+        if self.config.scene_contraction_norm == "inf":
+                order = float("inf")
+        elif self.config.scene_contraction_norm == "l2":
+            order = None
+        else:
+            raise ValueError("Invalid scene contraction norm")
+            
+        self.scene_contraction = SceneContraction(order=order)
 
         # Can we also use contraction for sdf?
         # Fields

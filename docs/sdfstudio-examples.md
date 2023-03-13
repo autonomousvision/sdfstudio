@@ -8,6 +8,19 @@ Here, we provide commands to reproduce reconstruction results on our project pag
 ns-train neus-facto-bigmlp --pipeline.model.sdf-field.use-grid-feature False --pipeline.model.sdf-field.use-appearance-embedding True --pipeline.model.sdf-field.geometric-init True --pipeline.model.sdf-field.inside-outside False --pipeline.model.sdf-field.bias 0.3 --pipeline.model.sdf-field.beta-init 0.3 --pipeline.model.eikonal-loss-mult 0.0001 --pipeline.model.num-samples-outside 4 --pipeline.model.background-model grid --trainer.steps-per-eval-image 5000 --vis wandb --experiment-name neus-facto-bigmlp-gate --machine.num-gpus 8 heritage-data --data data/heritage/brandenburg_gate
 ```
 
+## BakedSDF on the mipnerf360 dataset
+
+```
+# training
+ns-train bakedsdf-mlp --vis wandb --data data/nerfstudio-data-mipnerf360/garden --output-dir outputs/bakedsdf-mlp --trainer.steps-per-eval-batch 5000 --trainer.steps-per-eval-image 5000 --trainer.steps-per-eval-all-images 50000 --trainer.max-num-iterations 250001 --experiment-name bakedsdf-mlp-garden --pipeline.model.sdf-field.bias 1.5 --pipeline.model.sdf-field.inside-outside True --pipeline.model.eikonal-loss-mult 0.01 --pipeline.model.num-neus-samples-per-ray 32 --machine.num-gpus 4 --pipeline.model.scene-contraction-norm l2 mipnerf360-data
+
+# mesh extraction
+ns-extract-mesh --load-config outputs/XXX/config.yml --output-path meshes/bakedsdf-mlp-garden-4096.ply --bounding-box-min -2.0 -2.0 -2.0 --bounding-box-max 2.0 2.0 2.0 --resolution 4096 --marching_cube_threshold 0.001 --create_visibility_mask True
+
+# rendering
+ns-render-mesh --meshfile meshes/bakedsdf-mlp-garden-4096.ply --traj ellipse --fps 60 --num_views 480 --output_path renders/garden.mp4 mipnerf360-data --data data/nerfstudio-data-mipnerf360/garden
+```
+
 ## Unisurf, VolSDF, and NeuS with multi-res. grids on the DTU dataset
 
 ```bash
