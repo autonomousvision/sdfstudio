@@ -185,7 +185,7 @@ class SDFStudio(DataParser):
             indices = indices[:: self.config.skip_every_for_val_split]
         else:
             # if you use this option, training set should not contain any image in validation set
-            if self.config.train_val_no_split:
+            if self.config.train_val_no_overlap:
                 indices = [i for i in indices if i % self.config.skip_every_for_val_split != 0]
 
         image_filenames = []
