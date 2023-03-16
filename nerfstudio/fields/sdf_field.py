@@ -478,7 +478,7 @@ class SDFField(Field):
 
         if self.config.use_reflections:
             # https://github.com/google-research/multinerf/blob/5d4c82831a9b94a87efada2eee6a993d530c4226/internal/ref_utils.py#L22
-            refdirs = 2.0 * torch.sum(normals * directions, axis=-1, keepdims=True) * normals - directions
+            refdirs = 2.0 * torch.sum(normals * -directions, axis=-1, keepdims=True) * normals + directions
             d = self.direction_encoding(refdirs)
         else:
             d = self.direction_encoding(directions)
