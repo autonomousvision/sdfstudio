@@ -564,7 +564,7 @@ class SDFField(Field):
 
         if self.spatial_distortion is not None:
             inputs = self.spatial_distortion(inputs)
-
+        points_norm = inputs.norm(dim=-1)
         # compute gradient in constracted space
         inputs.requires_grad_(True)
         with torch.enable_grad():
@@ -584,6 +584,7 @@ class SDFField(Field):
         density = density.view(*ray_samples.frustums.directions.shape[:-1], -1)
         gradients = gradients.view(*ray_samples.frustums.directions.shape[:-1], -1)
         normals = F.normalize(gradients, p=2, dim=-1)
+        points_norm = points_norm.view(*ray_samples.frustums.directions.shape[:-1], -1)
 
         outputs.update(
             {
@@ -592,6 +593,7 @@ class SDFField(Field):
                 FieldHeadNames.SDF: sdf,
                 FieldHeadNames.NORMAL: normals,
                 FieldHeadNames.GRADIENT: gradients,
+                "points_norm": points_norm,
             }
         )
 

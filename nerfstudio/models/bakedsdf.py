@@ -81,6 +81,11 @@ class BakedSDFModelConfig(VolSDFModelConfig):
     """whether to use annealing for eikonal loss weight"""
     eikonal_anneal_max_num_iters: int = 250000
     """Max num iterations for the annealing of beta in laplacian density."""
+    use_spatial_varying_eikonal_loss: bool = False
+    """whether to use different weight of eikonal loss based the points norm, farway points have large weights"""
+    eikonal_loss_mult_start: float = 0.01
+    eikonal_loss_mult_end: float = 0.1
+    eikonal_loss_mult_slop: float = 2.0
 
 
 class BakedSDFFactoModel(VolSDFModel):
@@ -247,7 +252,25 @@ class BakedSDFFactoModel(VolSDFModel):
         if self.training:
             # eikonal loss
             grad_theta = outputs["eik_grad"]
-            loss_dict["eikonal_loss"] = ((grad_theta.norm(2, dim=-1) - 1) ** 2).mean() * self.config.eikonal_loss_mult
+            if self.config.use_spatial_varying_eikonal_loss:
+
+                points_norm = outputs["points_norm"][..., 0]
+                points_weights = torch.where(points_norm <= 1, torch.ones_like(points_norm), points_norm)
+
+                # shortcut
+                weight_init = self.config.eikonal_loss_mult_start
+                weight_end = self.config.eikonal_loss_mult_end
+                slop = self.config.eikonal_loss_mult_slop
+
+                points_weights = weight_end / (
+                    1 + (weight_end - weight_init) / weight_init * ((2.0 - points_weights) ** slop)
+                )
+
+                loss_dict["eikonal_loss"] = (((grad_theta.norm(2, dim=-1) - 1) ** 2) * points_weights).mean()
+            else:
+                loss_dict["eikonal_loss"] = (
+                    (grad_theta.norm(2, dim=-1) - 1) ** 2
+                ).mean() * self.config.eikonal_loss_mult
 
             loss_dict["interlevel_loss"] = self.config.interlevel_loss_mult * interlevel_loss(
                 outputs["weights_list"], outputs["ray_samples_list"]

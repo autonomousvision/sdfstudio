@@ -134,14 +134,14 @@ class SurfaceModel(Model):
     def populate_modules(self):
         """Set the fields and modules."""
         super().populate_modules()
-        
+
         if self.config.scene_contraction_norm == "inf":
-                order = float("inf")
+            order = float("inf")
         elif self.config.scene_contraction_norm == "l2":
             order = None
         else:
             raise ValueError("Invalid scene contraction norm")
-            
+
         self.scene_contraction = SceneContraction(order=order)
 
         # Can we also use contraction for sdf?
@@ -310,7 +310,8 @@ class SurfaceModel(Model):
 
         if self.training:
             grad_points = field_outputs[FieldHeadNames.GRADIENT]
-            outputs.update({"eik_grad": grad_points})
+            points_norm = field_outputs["points_norm"]
+            outputs.update({"eik_grad": grad_points, "points_norm": points_norm})
 
             # TODO volsdf use different point set for eikonal loss
             # grad_points = self.field.gradient(eik_points)
