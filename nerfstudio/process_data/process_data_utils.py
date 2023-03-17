@@ -167,7 +167,7 @@ def copy_images(data: Path, image_dir: Path, verbose) -> int:
         allowed_exts = [".jpg", ".jpeg", ".png", ".tif", ".tiff"]
         image_paths = sorted([p for p in data.glob("[!.]*") if p.suffix.lower() in allowed_exts])
 
-        num_frames = len(copy_images_list(image_paths, image_dir, verbose))
+        num_frames = len(copy_images_list(image_paths, image_dir, verbose=verbose))
 
     return num_frames
 
