@@ -9,8 +9,8 @@ import OpenWithIcon from '@mui/icons-material/OpenWith';
 import PublicOffSharpIcon from '@mui/icons-material/PublicOffSharp';
 import PublicSharpIcon from '@mui/icons-material/PublicSharp';
 import SyncOutlinedIcon from '@mui/icons-material/SyncOutlined';
-import WebRtcWindow from '../WebRtcWindow/WebRtcWindow';
 import { WebSocketContext } from '../WebSocket/WebSocket';
+import RenderWindow from '../RenderWindow/RenderWindow';
 
 const msgpack = require('msgpack-lite');
 
@@ -89,7 +89,7 @@ function TransformIcons(props) {
   );
 }
 
-// manages a camera and the web rtc stream...
+// manages a camera
 export default function ViewerWindow(props) {
   const sceneTree = props.sceneTree;
   const scene = sceneTree.object;
@@ -258,8 +258,7 @@ export default function ViewerWindow(props) {
 
   return (
     <>
-      {/* the webrtc viewer needs to know the camera pose */}
-      <WebRtcWindow />
+      <RenderWindow  />
       <div className="canvas-container-main" ref={myRef}>
         <div className="ViewerWindow-camera-toggle">
           <CameraToggle />
