@@ -119,6 +119,9 @@ class NeuSAccModel(NeuSModel):
                 n_rays=n_rays,
             )
 
+            # the rendered depth is point-to-point distance and we should convert to depth
+            depth = depth / ray_bundle.directions_norm
+
             outputs = {
                 "rgb": rgb,
                 "accumulation": accumulation,
