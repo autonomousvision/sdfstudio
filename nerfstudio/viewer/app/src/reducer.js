@@ -6,12 +6,9 @@ const initialState = {
     isConnected: false,
     websocket_url: 'ws://localhost:7007',
   },
-  // the webrtc connection state
-  webrtcState: {
-    isConnected: false,
-  },
   // for sending actual commands to the client
   camera_path_payload: null,
+  render_img: null, // The rendered images
   // the rendering state
   renderingState: {
     // cameras
@@ -46,9 +43,6 @@ const initialState = {
     sceneBox: null,
     cameras: null,
   },
-  // ------------------------------------------------------------------------
-  // which of the state keys to synchronize with the bridge server
-  sync_keys: ['renderingState', 'sceneState'],
 };
 
 function setData(newState, state, path, data) {
