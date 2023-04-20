@@ -51,7 +51,7 @@ class Record3DDataParserConfig(DataParserConfig):
     """1/val_skip images to use for validation."""
     aabb_scale: float = 4.0
     """Scene scale."""
-    orientation_method: Literal["pca", "up"] = "up"
+    orientation_method: Literal["pca", "vertical", "up"] = "vertical"
     """The method to use for orientation"""
     max_dataset_size: int = 300
     """Max number of images to train on. If the dataset has more, images will be sampled approximately evenly. If -1,
@@ -116,7 +116,7 @@ class Record3D(DataParser):
         poses = torch.from_numpy(poses[:, :3, :4])
 
         poses = camera_utils.auto_orient_and_center_poses(
-            pose_utils.to4x4(poses), method=self.config.orientation_method
+            pose_utils.to4x4(poses), method=self.config.orientation_method, center_method="poses"
         )[:, :3, :4]
 
         # Centering poses

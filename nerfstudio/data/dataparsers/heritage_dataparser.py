@@ -80,16 +80,14 @@ class HeritageDataParserConfig(DataParserConfig):
     """How much to scale the camera origins by."""
     alpha_color: str = "white"
     """alpha color of background"""
-    train_split_percentage: float = 0.9
-    """The percent of images to use for training. The remaining images are for eval."""
+    train_split_fraction: float = 0.9
+    """The fraction of images to use for training. The remaining images are for eval."""
     scene_scale: float = 1.0
     """How much to scale the region of interest by."""
-    orientation_method: Literal["pca", "up", "none"] = "up"
+    orientation_method: Literal["pca", "up", "vertical", "none"] = "vertical"
     """The method to use for orientation."""
     auto_scale_poses: bool = True
     """Whether to automatically scale the poses to fit in +/- 1 bounding box."""
-    center_poses: bool = True
-    """Whether to center the poses."""
 
 
 @dataclass
@@ -105,7 +103,7 @@ class Heritage(DataParser):
         self.data: Path = config.data
         self.scale_factor: float = config.scale_factor
         self.alpha_color = config.alpha_color
-        self.train_split_percentage = config.train_split_percentage
+        self.train_split_fraction = config.train_split_fraction
 
     # pylint: disable=too-many-statements
     def _generate_dataparser_outputs(self, split="train"):
@@ -208,7 +206,7 @@ class Heritage(DataParser):
 
         # filter image_filenames and poses based on train/eval split percentage
         num_images = len(image_filenames)
-        num_train_images = math.ceil(num_images * self.config.train_split_percentage)
+        num_train_images = math.ceil(num_images * self.config.train_split_fraction)
         num_eval_images = num_images - num_train_images
         i_all = np.arange(num_images)
         i_train = np.linspace(
@@ -225,7 +223,7 @@ class Heritage(DataParser):
 
         """
         poses = camera_utils.auto_orient_and_center_poses(
-            poses, method=self.config.orientation_method, center_poses=self.config.center_poses
+            poses, method=self.config.orientation_method, center_method=self.config.center_method
         )
 
         # Scale poses
@@ -248,7 +246,7 @@ class Heritage(DataParser):
         poses, transform = camera_utils.auto_orient_and_center_poses(
             poses,
             method=self.config.orientation_method,
-            center_poses=False,
+            center_method="none",
         )
 
         # scale pts accordingly
