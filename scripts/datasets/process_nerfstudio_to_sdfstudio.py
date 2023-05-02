@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 def main(args):
     """
-    given data that follows the nerfstduio format such as the output from colmap or polycam,
+    Given data that follows the nerfstudio format such as the output from colmap or polycam,
     convert to a format that sdfstudio will ingest
     """
     output_dir = Path(args.output_dir)
@@ -248,13 +248,13 @@ if __name__ == "__main__":
                                                  "currently support colmap and polycam")
 
     parser.add_argument("--data", dest="input_dir", required=True, help="path to nerfstudio data directory")
-    parser.add_argument("--output-dir", dest="output_dir", required=True, help="path to ouput data directory")
+    parser.add_argument("--output-dir", dest="output_dir", required=True, help="path to output data directory")
     parser.add_argument("--data-type", dest="data_type", required=True, choices=["colmap", "polycam"])
     parser.add_argument("--scene-type", dest="scene_type", required=True, choices=["indoor", "object", "unbound"],
                         help="The scene will be normalized into a unit sphere when selecting indoor or object.")
     parser.add_argument("--scene-scale-mult", dest="scene_scale_mult", type=float, default=None,
                         help="The bounding box of the scene is firstly calculated by the camera positions, "
-                             "then mutiply with scene_scale_mult")
+                             "then multiply with scene_scale_mult")
 
     parser.add_argument("--sensor-depth", dest="sensor_depth", action="store_true",
                         help="Generate sensor depths from polycam.")
