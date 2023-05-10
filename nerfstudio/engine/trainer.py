@@ -334,7 +334,7 @@ class Trainer:
             step: Current training step.
         """
         # a batch of eval rays
-        if step_check(step, self.config.trainer.steps_per_eval_batch):
+        if step_check(step, self.config.trainer.steps_per_eval_batch, run_at_zero=self.config.trainer.sanity_check):
             _, eval_loss_dict, eval_metrics_dict = self.pipeline.get_eval_loss_dict(step=step)
             eval_loss = functools.reduce(torch.add, eval_loss_dict.values())
             writer.put_scalar(name="Eval Loss", scalar=eval_loss, step=step)
