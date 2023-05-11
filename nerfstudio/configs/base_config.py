@@ -134,6 +134,8 @@ class LoggingConfig(PrintableConfig):
 class TrainerConfig(PrintableConfig):
     """Configuration for training regimen"""
 
+    sanity_check: bool = False
+    """Whether run sanity check before training start."""
     steps_per_save: int = 1000
     """Number of steps between saves."""
     steps_per_eval_batch: int = 500
