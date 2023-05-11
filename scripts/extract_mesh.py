@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Tuple
+from typing import Literal, Tuple
 
 import torch
 import tyro
@@ -24,7 +24,6 @@ CONSOLE = Console(width=120)
 
 # speedup for when input size to model doesn't change (much)
 torch.backends.cudnn.benchmark = True  # type: ignore
-torch.set_float32_matmul_precision("high")
 
 
 @dataclass
@@ -57,9 +56,12 @@ class ExtractMesh:
     valid_points_thres: float = 0.005
     """sub samples factor of images when creating visibility grid"""
     sub_sample_factor: int = 8
+    """torch precision"""
+    torch_precision: Literal["highest", "high"] = "high"
 
     def main(self) -> None:
         """Main function."""
+        torch.set_float32_matmul_precision(self.torch_precision)
         assert str(self.output_path)[-4:] == ".ply"
         self.output_path.parent.mkdir(parents=True, exist_ok=True)
 
