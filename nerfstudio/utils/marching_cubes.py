@@ -156,7 +156,7 @@ def get_surface_sliding(
     else:
         filename = str(output_path)
         filename_simplify = str(output_path).replace(".ply", "-simplify.ply")
-
+        combined.merge_vertices(digits_vertex=6)
         combined.export(filename)
         if simplify_mesh:
             ms = pymeshlab.MeshSet()
@@ -318,6 +318,7 @@ def get_surface_sliding_with_contraction(
                     meshes.append(meshcrop)
 
     combined = trimesh.util.concatenate(meshes)
+    combined.merge_vertices(digits_vertex=6)
 
     # inverse contraction and clipping the points range
     if inv_contraction is not None:
