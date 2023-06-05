@@ -28,7 +28,7 @@ ns-train volsdf --pipeline.model.sdf-field.inside-outside False sdfstudio-data -
 
 ## NeuS
 
-NeuS uses hierachical sampling with multiple steps and converts the SDF value to an alpha value based on a sigmoid function [see paper for details]. To train a NeuS model, run the following command:
+NeuS uses hierarchical sampling with multiple steps and converts the SDF value to an alpha value based on a sigmoid function [see paper for details]. To train a NeuS model, run the following command:
 
 ```
 ns-train neus --pipeline.model.sdf-field.inside-outside False sdfstudio-data --data data/sdfstudio-demo-data/dtu-scan65
@@ -69,7 +69,7 @@ ns-train geo-neus --pipeline.model.sdf-field.inside-outside False sdfstudio-data
 
 ## Geo-UniSurf
 
-The idea of Geo-NeuS can also applied to UniSurf, which we call Geo-UniSurf. To train a Geo-UniSurf model on the DTU dataset, run the following command:
+The idea of Geo-NeuS can also be applied to UniSurf, which we call Geo-UniSurf. To train a Geo-UniSurf model on the DTU dataset, run the following command:
 
 ```
 ns-train geo-unisurf --pipeline.model.sdf-field.inside-outside False sdfstudio-data -data data/dtu/scan24 --load-pairs True
@@ -110,7 +110,7 @@ ns-train neusW --pipeline.model.sdf-field.inside-outside False heritage-data --d
 
 # Representations
 
-The representation stores geometry and appearance. The geometric mapping takes a 3D position as input and outputs an SDF value, a normal vector, and a geometric feautre vector. The color mapping (implemented as an MLP) takes a 3D position and view direction together with the normal vector and the geometry feature vector from the geometry mapping as input and outputs an RGB color vector.
+The representation stores geometry and appearance. The geometric mapping takes a 3D position as input and outputs an SDF value, a normal vector, and a geometric feature vector. The color mapping (implemented as an MLP) takes a 3D position and view direction together with the normal vector and the geometry feature vector from the geometry mapping as input and outputs an RGB color vector.
 
 We support three representations for the geometric mapping: MLPs, Multi-Res. Feature Grids from [iNGP](https://github.com/NVlabs/instant-ngp), and Tri-plane from [ConvONet](https://github.com/autonomousvision/convolutional_occupancy_networks) or [EG3D](https://github.com/NVlabs/eg3d). We now explain these representations in more detail:
 
@@ -124,7 +124,7 @@ ns-train volsdf --pipeline.model.sdf-field.use-grid-feature False --pipeline.mod
 
 ## Multi-res Feature Grids
 
-The 3D position is first mapped to a multi-resolution feature grid, using tri-linear interpolation to retreive the corresponding feature vector. This feature vector is then used as input to an MLP to predict SDF, normal, and geometry features. To train a VolSDF model with Multi-Res Feature Grid representation with 2 layers and 256 hidden dimensions, run the following command:
+The 3D position is first mapped to a multi-resolution feature grid, using tri-linear interpolation to retrieve the corresponding feature vector. This feature vector is then used as input to an MLP to predict SDF, normal, and geometry features. To train a VolSDF model with Multi-Res Feature Grid representation with 2 layers and 256 hidden dimensions, run the following command:
 
 ```
 ns-train volsdf --pipeline.model.sdf-field.use-grid-feature True --pipeline.model.sdf-field.encoding-type hash sdfstudio-data --data YOUR_DATA
@@ -132,7 +132,7 @@ ns-train volsdf --pipeline.model.sdf-field.use-grid-feature True --pipeline.mode
 
 ## Tri-plane
 
-The 3D position is first mapped to three orthogonal planes, using bi-linear interpolation to retreive a feature vector for each plane which are concatenated as as input to the MLP. To use a tri-plane representation on VolSDF, run the following command:
+The 3D position is first mapped to three orthogonal planes, using bi-linear interpolation to retrieve a feature vector for each plane which are concatenated as input to the MLP. To use a tri-plane representation on VolSDF, run the following command:
 
 ```
 ns-train volsdf --pipeline.model.sdf-field.use-grid-feature True  --pipeline.model.sdf-field.encoding-type tri-plane sdfstudio-data --data YOUR_DATA
@@ -152,7 +152,7 @@ For indoor scenes, please initialize the model using the following command:
 ns-train volsdf --pipeline.model.sdf-field.geometric-init True --pipeline.model.sdf-field.bias 0.8 --pipeline.model.sdf-field.inside-outside True
 ```
 
-Note that for indoor scenes the cameras are inside the sphere so we set `inside-outside` to `True` such that the points inside the sphere will have positive SDF values and points outside the sphere will have negative SDF values.
+Note that for indoor scenes the cameras are inside the sphere, so we set `inside-outside` to `True` such that the points inside the sphere will have positive SDF values and points outside the sphere will have negative SDF values.
 
 ## Color Network
 
@@ -170,7 +170,7 @@ We use the L1 loss for the RGB loss to supervise the volume rendered color at ea
 
 ## Mask Loss
 
-The (optional) mask loss can be helpful to seperate the foreground object from the background. However, it requires additional masks as inputs. For example, in NeuralReconW, a segmentation network can be used to predict the sky region and the sky segmentation can be used as a label for the mask loss. The mask loss is used by default if masks are provided in the dataset. You can change the weight for the mask loss via:
+The (optional) mask loss can be helpful to separate the foreground object from the background. However, it requires additional masks as inputs. For example, in NeuralReconW, a segmentation network can be used to predict the sky region and the sky segmentation can be used as a label for the mask loss. The mask loss is used by default if masks are provided in the dataset. You can change the weight for the mask loss via:
 
 ```
 --pipeline.model.fg-mask-loss-mult 0.001
@@ -216,7 +216,7 @@ Encouraging multi-view photometric consistency is proposed in Geo-NeuS. For each
 --pipeline.model.patch-size 11 --pipeline.model.patch-warp-loss-mult 0.1 --pipeline.model.topk 4
 ```
 
-where topk denotes the number of nearby views which have the smallest NCC error. Only those patchesare used for supervision, effectively ignoring outliers, e.g., due to occlusion.
+where topk denotes the number of nearby views which have the smallest NCC error. Only those patches are used for supervision, effectively ignoring outliers, e.g., due to occlusion.
 
 ## Sensor Depth Loss
 
