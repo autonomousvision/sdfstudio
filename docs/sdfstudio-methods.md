@@ -119,7 +119,7 @@ We support three representations for the geometric mapping: MLPs, Multi-Res. Fea
 The 3D position is encoded using a positional encoding as in NeRF and passed to a multi-layer perceptron (MLP) network to predict an SDF value, normal, and geometry feature. To train VolSDF with an MLP with 8 layers and 512 hidden dimensions, run the following command:
 
 ```
-ns-train volsdf --pipeline.model.sdf-field.use-grid-feature False --pipeline.model.sdf-field.use-grid-feature sdfstudio-data --data YOUR_DATA
+ns-train volsdf --pipeline.model.sdf-field.use-grid-feature False sdfstudio-data --data YOUR_DATA
 ```
 
 ## Multi-res Feature Grids
