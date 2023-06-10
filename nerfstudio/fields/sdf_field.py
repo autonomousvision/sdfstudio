@@ -169,6 +169,18 @@ class SDFFieldConfig(FieldConfig):
     """whether to use off axis encoding from mipnerf360"""
     use_numerical_gradients: bool = False
     """whether to use numercial gradients"""
+    num_levels: int = 16
+    """number of levels for multi-resolution hash grids"""
+    max_res: int 2048
+    """max resolution for multi-resolution hash grids"""
+    base_res: int = 16
+    """base resolution for multi-resolution hash grids"""
+    log2_hashmap_size: int = 19
+    """log2 hash map size for multi-resolution hash grids"""
+    hash_features_per_level: int = 8
+    """number of features per level for multi-resolution hash grids"""
+    hash_smoothstep: bool = True
+    """whether to use smoothstep for multi-resolution hash grids"""
 
 
 class SDFField(Field):
@@ -202,14 +214,14 @@ class SDFField(Field):
         self.use_grid_feature = self.config.use_grid_feature
         self.divide_factor = self.config.divide_factor
 
-        num_levels = 16
-        max_res = 2048
-        base_res = 16
-        log2_hashmap_size = 19
-        features_per_level = 2
+        self.num_levels = self.config.num_levels
+        self.max_res = self.config.max_res 
+        self.base_res = self.config.base_res 
+        self.log2_hashmap_size = self.config.log2_hashmap_size 
+        self.features_per_level = self.config.hash_features_per_level 
         use_hash = True
-        smoothstep = True
-        growth_factor = np.exp((np.log(max_res) - np.log(base_res)) / (num_levels - 1))
+        smoothstep = self.config.hash_smoothstep
+        self.growth_factor = np.exp((np.log(self.max_res) - np.log(self.base_res)) / (self.num_levels - 1))
 
         if self.config.encoding_type == "hash":
             # feature encoding
@@ -217,22 +229,22 @@ class SDFField(Field):
                 n_input_dims=3,
                 encoding_config={
                     "otype": "HashGrid" if use_hash else "DenseGrid",
-                    "n_levels": num_levels,
-                    "n_features_per_level": features_per_level,
-                    "log2_hashmap_size": log2_hashmap_size,
-                    "base_resolution": base_res,
-                    "per_level_scale": growth_factor,
+                    "n_levels": self.num_levels,
+                    "n_features_per_level": self.features_per_level,
+                    "log2_hashmap_size": self.log2_hashmap_size,
+                    "base_resolution": self.base_res,
+                    "per_level_scale": self.growth_factor,
                     "interpolation": "Smoothstep" if smoothstep else "Linear",
                 },
             )
         elif self.config.encoding_type == "periodic":
             print("using periodic encoding")
             self.encoding = PeriodicVolumeEncoding(
-                num_levels=num_levels,
-                min_res=base_res,
-                max_res=max_res,
+                num_levels=self.num_levels,
+                min_res=self.base_res,
+                max_res=self.max_res,
                 log2_hashmap_size=18,  # 64 ** 3 = 2^18
-                features_per_level=features_per_level,
+                features_per_level=self.features_per_level,
                 smoothstep=smoothstep,
             )
         elif self.config.encoding_type == "tensorf_vm":
