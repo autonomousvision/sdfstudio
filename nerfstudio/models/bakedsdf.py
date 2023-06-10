@@ -77,6 +77,10 @@ class BakedSDFModelConfig(VolSDFModelConfig):
     """whether to use anneal beta"""
     beta_anneal_max_num_iters: int = 250000
     """Max num iterations for the annealing of beta in laplacian density."""
+    beta_anneal_init: float = 0.1
+    """Initial value of beta for the annealing of beta in laplacian density."""
+    beta_anneal_end: float = 0.001
+    """End value of beta for the annealing of beta in laplacian density."""
     use_anneal_eikonal_weight: bool = False
     """whether to use annealing for eikonal loss weight"""
     eikonal_anneal_max_num_iters: int = 250000
@@ -189,8 +193,8 @@ class BakedSDFFactoModel(VolSDFModel):
         if self.config.use_anneal_beta:
             # anneal the beta of volsdf before each training iterations
             M = self.config.beta_anneal_max_num_iters
-            beta_init = 0.1
-            beta_end = 0.001
+            beta_init = self.config.beta_anneal_init
+            beta_end = self.config.beta_anneal_end
 
             def set_beta(step):
                 # bakedsdf's beta schedule
