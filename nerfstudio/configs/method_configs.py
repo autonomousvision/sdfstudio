@@ -60,6 +60,7 @@ from nerfstudio.models.instant_ngp import InstantNGPModelConfig
 from nerfstudio.models.mipnerf import MipNerfModel
 from nerfstudio.models.nerfacto import NerfactoModelConfig
 from nerfstudio.models.neuralangelo import NeuralangeloModelConfig
+from nerfstudio.models.bakedangelo import BakedAngeloModelConfig
 from nerfstudio.models.neuralreconW import NeuralReconWModelConfig
 from nerfstudio.models.neus import NeuSModelConfig
 from nerfstudio.models.neus_acc import NeuSAccModelConfig
@@ -102,7 +103,75 @@ descriptions = {
     "bakedsdf": "Implementation of BackedSDF with multi-res hash grids",
     "bakedsdf-mlp": "Implementation of BackedSDF with large MLPs",
     "neuralangelo": "Implementation of Neuralangelo",
+    "bakedangelo": "Implementation of Neuralangelo with BakedSDF",
 }
+
+
+method_configs["bakedangelo"] = Config(
+    method_name="bakedangelo",
+    trainer=TrainerConfig(
+        steps_per_eval_image=5000,
+        steps_per_eval_batch=5000,
+        steps_per_save=20000,
+        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
+        max_num_iterations=1000_001,
+        mixed_precision=False,
+    ),
+    pipeline=VanillaPipelineConfig(
+        datamanager=VanillaDataManagerConfig(
+            dataparser=SDFStudioDataParserConfig(),
+            train_num_rays_per_batch=8192,
+            eval_num_rays_per_batch=1024,
+            camera_optimizer=CameraOptimizerConfig(
+                mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
+            ),
+        ),
+        model=BakedAngeloModelConfig(
+            near_plane=0.01,
+            far_plane=1000.0,
+            overwrite_near_far_plane=True,
+            sdf_field=SDFFieldConfig(
+                use_grid_feature=True,
+                num_layers=1,
+                num_layers_color=4,
+                hidden_dim=256,
+                hidden_dim_color=256,
+                geometric_init=True,
+                bias=1.5,
+                beta_init=0.1,
+                inside_outside=True,
+                use_appearance_embedding=True,
+                use_numerical_gradients=True,
+            ),
+            eikonal_loss_mult=0.01,
+            background_model="none",
+            proposal_weights_anneal_max_num_iters=10000,
+            use_anneal_beta=True,
+            eval_num_rays_per_chunk=1024,
+            use_spatial_varying_eikonal_loss=True,
+            steps_per_level=10_000,
+            curvature_loss_warmup_steps=20_000,
+            beta_anneal_max_num_iters=1000_000,
+        ),
+    ),
+    optimizers={
+        "proposal_networks": {
+            "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
+            "scheduler": MultiStepSchedulerConfig(max_steps=1000_000),
+        },
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=1e-3, eps=1e-15),
+            "scheduler": MultiStepWarmupSchedulerConfig(warm_up_end=5000, milestones=[600_000, 800_000], gamma=0.1),
+        },
+        "field_background": {
+            "optimizer": AdamWOptimizerConfig(lr=1e-3, eps=1e-15),
+            "scheduler": MultiStepWarmupSchedulerConfig(warm_up_end=5000, milestones=[300_000, 400_000], gamma=0.1),
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer",
+)
+
 
 
 method_configs["neuralangelo"] = Config(
