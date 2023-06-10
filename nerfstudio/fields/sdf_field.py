@@ -167,6 +167,8 @@ class SDFFieldConfig(FieldConfig):
     """Padding added to the RGB outputs"""
     off_axis: bool = False
     """whether to use off axis encoding from mipnerf360"""
+    use_numerical_gradients: bool = False
+    """whether to use numercial gradients"""
 
 
 class SDFField(Field):
@@ -346,6 +348,7 @@ class SDFField(Field):
         self.sigmoid = torch.nn.Sigmoid()
 
         self._cos_anneal_ratio = 1.0
+        self.numerical_gradients_delta = 0.0001
 
     def set_cos_anneal_ratio(self, anneal: float) -> None:
         """Set the anneal value for the proposal network."""
@@ -385,20 +388,52 @@ class SDFField(Field):
         sdf, _ = torch.split(h, [1, self.config.geo_feat_dim], dim=-1)
         return sdf
 
-    def gradient(self, x):
+    def set_numerical_gradients_delta(self, delta: float) -> None:
+        """Set the delta value for numerical gradient."""
+        self.numerical_gradients_delta = delta
+
+    def gradient(self, x, skip_spatial_distortion=False, return_sdf=False):
         """compute the gradient of the ray"""
-        if self.spatial_distortion is not None:
+        if self.spatial_distortion is not None and not skip_spatial_distortion:
             x = self.spatial_distortion(x)
 
         # compute gradient in contracted space
-        x.requires_grad_(True)
+        if self.config.use_numerical_gradients:
+            # https://github.com/bennyguo/instant-nsr-pl/blob/main/models/geometry.py#L173
+            delta = self.numerical_gradients_delta
+            points = torch.stack(
+                [
+                    x + torch.as_tensor([delta, 0.0, 0.0]).to(x),
+                    x + torch.as_tensor([-delta, 0.0, 0.0]).to(x),
+                    x + torch.as_tensor([0.0, delta, 0.0]).to(x),
+                    x + torch.as_tensor([0.0, -delta, 0.0]).to(x),
+                    x + torch.as_tensor([0.0, 0.0, delta]).to(x),
+                    x + torch.as_tensor([0.0, 0.0, -delta]).to(x),
+                ],
+                dim=0,
+            )
 
-        y = self.forward_geonetwork(x)[:, :1]
-        d_output = torch.ones_like(y, requires_grad=False, device=y.device)
-        gradients = torch.autograd.grad(
-            outputs=y, inputs=x, grad_outputs=d_output, create_graph=True, retain_graph=True, only_inputs=True
-        )[0]
-        return gradients
+            points_sdf = self.forward_geonetwork(points.view(-1, 3))[..., 0].view(6, *x.shape[:-1])
+            gradients = torch.stack(
+                [
+                    0.5 * (points_sdf[0] - points_sdf[1]) / delta,
+                    0.5 * (points_sdf[2] - points_sdf[3]) / delta,
+                    0.5 * (points_sdf[4] - points_sdf[5]) / delta,
+                ],
+                dim=-1,
+            )
+        else:
+            x.requires_grad_(True)
+
+            y = self.forward_geonetwork(x)[:, :1]
+            d_output = torch.ones_like(y, requires_grad=False, device=y.device)
+            gradients = torch.autograd.grad(
+                outputs=y, inputs=x, grad_outputs=d_output, create_graph=True, retain_graph=True, only_inputs=True
+            )[0]
+        if not return_sdf:
+            return gradients
+        else:
+            return gradients, points_sdf
 
     def get_density(self, ray_samples: RaySamples):
         """Computes and returns the densities."""
@@ -570,10 +605,25 @@ class SDFField(Field):
         with torch.enable_grad():
             h = self.forward_geonetwork(inputs)
             sdf, geo_feature = torch.split(h, [1, self.config.geo_feat_dim], dim=-1)
-        d_output = torch.ones_like(sdf, requires_grad=False, device=sdf.device)
-        gradients = torch.autograd.grad(
-            outputs=sdf, inputs=inputs, grad_outputs=d_output, create_graph=True, retain_graph=True, only_inputs=True
-        )[0]
+
+        if self.config.use_numerical_gradients:
+            gradients, sampled_sdf = self.gradient(
+                inputs,
+                skip_spatial_distortion=True,
+                return_sdf=True,
+            )
+            sampled_sdf = sampled_sdf.view(-1, *ray_samples.frustums.directions.shape[:-1]).permute(1, 2, 0).contiguous()
+        else:
+            d_output = torch.ones_like(sdf, requires_grad=False, device=sdf.device)
+            gradients = torch.autograd.grad(
+                outputs=sdf,
+                inputs=inputs,
+                grad_outputs=d_output,
+                create_graph=True,
+                retain_graph=True,
+                only_inputs=True,
+            )[0]
+            sampled_sdf = None
 
         rgb = self.get_colors(inputs, directions_flat, gradients, geo_feature, camera_indices)
 
@@ -585,7 +635,7 @@ class SDFField(Field):
         gradients = gradients.view(*ray_samples.frustums.directions.shape[:-1], -1)
         normals = F.normalize(gradients, p=2, dim=-1)
         points_norm = points_norm.view(*ray_samples.frustums.directions.shape[:-1], -1)
-
+        
         outputs.update(
             {
                 FieldHeadNames.RGB: rgb,
@@ -594,6 +644,7 @@ class SDFField(Field):
                 FieldHeadNames.NORMAL: normals,
                 FieldHeadNames.GRADIENT: gradients,
                 "points_norm": points_norm,
+                "sampled_sdf": sampled_sdf,
             }
         )
 
