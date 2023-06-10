@@ -171,7 +171,7 @@ class SDFFieldConfig(FieldConfig):
     """whether to use numercial gradients"""
     num_levels: int = 16
     """number of levels for multi-resolution hash grids"""
-    max_res: int 2048
+    max_res: int = 2048
     """max resolution for multi-resolution hash grids"""
     base_res: int = 16
     """base resolution for multi-resolution hash grids"""
