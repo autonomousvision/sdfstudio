@@ -148,6 +148,11 @@ class BakedSDFFactoModel(VolSDFModel):
 
         param_groups["proposal_networks"] = list(self.proposal_networks.parameters())
 
+        if self.config.background_model != "none":
+            param_groups["field_background"] = list(self.field_background.parameters())
+        else:
+            param_groups["field_background"] = list(self.field_background)
+            
         return param_groups
 
     def get_training_callbacks(
