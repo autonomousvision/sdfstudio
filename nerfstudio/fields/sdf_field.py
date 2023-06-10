@@ -181,6 +181,8 @@ class SDFFieldConfig(FieldConfig):
     """number of features per level for multi-resolution hash grids"""
     hash_smoothstep: bool = True
     """whether to use smoothstep for multi-resolution hash grids"""
+    use_position_encoding: bool = True
+    """whether to use positional encoding as input for geometric network"""
 
 
 class SDFField(Field):
@@ -375,7 +377,9 @@ class SDFField(Field):
             feature = torch.zeros_like(inputs[:, :1].repeat(1, self.encoding.n_output_dims))
 
         pe = self.position_encoding(inputs)
-
+        if not self.config.use_position_encoding:
+            pe = torch.zeros_like(pe)
+        
         inputs = torch.cat((inputs, pe, feature), dim=-1)
 
         x = inputs
