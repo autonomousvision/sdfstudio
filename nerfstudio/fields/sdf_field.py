@@ -239,6 +239,11 @@ class SDFField(Field):
                     "interpolation": "Smoothstep" if smoothstep else "Linear",
                 },
             )
+            self.hash_encoding_mask = torch.ones(
+                self.num_levels * self.features_per_level,
+                dtype=torch.float32,
+            )
+
         elif self.config.encoding_type == "periodic":
             print("using periodic encoding")
             self.encoding = PeriodicVolumeEncoding(
@@ -368,11 +373,19 @@ class SDFField(Field):
         """Set the anneal value for the proposal network."""
         self._cos_anneal_ratio = anneal
 
+    def update_mask(self, level: int):
+        self.hash_encoding_mask[:] = 1.0
+        self.hash_encoding_mask[level * self.features_per_level:] = 0
+        
     def forward_geonetwork(self, inputs):
         """forward the geonetwork"""
         if self.use_grid_feature:
+            #TODO normalize inputs depending on the whether we model the background or not
             positions = (inputs + 2.0) / 4.0
+            # positions = (inputs + 1.0) / 2.0
             feature = self.encoding(positions)
+            # mask feature
+            feature = feature * self.hash_encoding_mask.to(feature.device)
         else:
             feature = torch.zeros_like(inputs[:, :1].repeat(1, self.encoding.n_output_dims))
 
