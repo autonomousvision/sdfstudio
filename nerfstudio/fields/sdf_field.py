@@ -177,7 +177,7 @@ class SDFFieldConfig(FieldConfig):
     """base resolution for multi-resolution hash grids"""
     log2_hashmap_size: int = 19
     """log2 hash map size for multi-resolution hash grids"""
-    hash_features_per_level: int = 8
+    hash_features_per_level: int = 2
     """number of features per level for multi-resolution hash grids"""
     hash_smoothstep: bool = True
     """whether to use smoothstep for multi-resolution hash grids"""
