@@ -45,7 +45,7 @@ from nerfstudio.data.dataparsers.instant_ngp_dataparser import (
 from nerfstudio.data.dataparsers.mipnerf360_dataparser import Mipnerf360DataParserConfig
 from nerfstudio.data.dataparsers.monosdf_dataparser import MonoSDFDataParserConfig
 from nerfstudio.data.dataparsers.nerfstudio_dataparser import NerfstudioDataParserConfig
-from nerfstudio.data.dataparsers.nuscenes_dataparser import NuScenesDataParserConfig
+# from nerfstudio.data.dataparsers.nuscenes_dataparser import NuScenesDataParserConfig
 from nerfstudio.data.dataparsers.phototourism_dataparser import (
     PhototourismDataParserConfig,
 )
@@ -74,7 +74,7 @@ AnnotatedDataParserUnion = tyro.conf.OmitSubcommandPrefixes[  # Omit prefixes of
             "blender-data": BlenderDataParserConfig(),
             "friends-data": FriendsDataParserConfig(),
             "instant-ngp-data": InstantNGPDataParserConfig(),
-            "nuscenes-data": NuScenesDataParserConfig(),
+            # "nuscenes-data": NuScenesDataParserConfig(),
             "record3d-data": Record3DDataParserConfig(),
             "dnerf-data": DNeRFDataParserConfig(),
             "phototourism-data": PhototourismDataParserConfig(),
