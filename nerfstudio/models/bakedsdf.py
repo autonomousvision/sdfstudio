@@ -234,10 +234,14 @@ class BakedSDFFactoModel(VolSDFModel):
 
     def sample_and_forward_field(self, ray_bundle: RayBundle):
         ray_samples, weights_list, ray_samples_list = self.proposal_sampler(ray_bundle, density_fns=self.density_fns)
-
+        # TODO only forward the points that are inside the sphere
         field_outputs = self.field(ray_samples)
-        weights, transmittance = ray_samples.get_weights_and_transmittance(field_outputs[FieldHeadNames.DENSITY])
-        bg_transmittance = transmittance[:, -1, :]
+        field_outputs[FieldHeadNames.ALPHA] = ray_samples.get_alphas(field_outputs[FieldHeadNames.DENSITY])
+
+        if self.config.background_model != "none":
+            field_outputs = self.forward_background_field_and_merge(ray_samples, field_outputs)
+
+        weights = ray_samples.get_weights_from_alphas(field_outputs[FieldHeadNames.ALPHA])
 
         weights_list.append(weights)
         ray_samples_list.append(ray_samples)
@@ -246,7 +250,6 @@ class BakedSDFFactoModel(VolSDFModel):
             "ray_samples": ray_samples,
             "field_outputs": field_outputs,
             "weights": weights,
-            "bg_transmittance": bg_transmittance,
             "weights_list": weights_list,
             "ray_samples_list": ray_samples_list,
         }
