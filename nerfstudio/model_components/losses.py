@@ -109,6 +109,66 @@ def interlevel_loss(weights_list, ray_samples_list):
     return loss_interlevel
 
 
+## zip-NeRF losses
+def blur_stepfun(x, y, r):
+    x_c = torch.cat([x - r, x + r], dim=-1)
+    x_r, x_idx = torch.sort(x_c, dim=-1)
+    zeros = torch.zeros_like(y[:, :1])
+    y_1 = (torch.cat([y, zeros], dim=-1) - torch.cat([zeros, y], dim=-1)) / (2 * r)
+    x_idx = x_idx[:, :-1]
+    y_2 = torch.cat([y_1, -y_1], dim=-1)[
+        torch.arange(x_idx.shape[0]).reshape(-1, 1).expand(x_idx.shape).to(x_idx.device), x_idx
+    ]
+
+    y_r = torch.cumsum((x_r[:, 1:] - x_r[:, :-1]) * torch.cumsum(y_2, dim=-1), dim=-1)
+    y_r = torch.cat([zeros, y_r], dim=-1)
+    return x_r, y_r
+
+
+def interlevel_loss_zip(weights_list, ray_samples_list):
+    """Calculates the proposal loss in the Zip-NeRF paper."""
+    c = ray_samples_to_sdist(ray_samples_list[-1]).detach()
+    w = weights_list[-1][..., 0].detach()
+
+    # 1. normalize
+    w_normalize = w / (c[:, 1:] - c[:, :-1])
+
+    loss_interlevel = 0.0
+    for ray_samples, weights, r in zip(ray_samples_list[:-1], weights_list[:-1], [0.03, 0.003]):
+        # 2. step blur with different r
+        x_r, y_r = blur_stepfun(c, w_normalize, r)
+        y_r = torch.clip(y_r, min=0)
+        assert (y_r >= 0.0).all()
+
+        # 3. accumulate
+        y_cum = torch.cumsum((y_r[:, 1:] + y_r[:, :-1]) * 0.5 * (x_r[:, 1:] - x_r[:, :-1]), dim=-1)
+        y_cum = torch.cat([torch.zeros_like(y_cum[:, :1]), y_cum], dim=-1)
+
+        # 4 loss
+        sdist = ray_samples_to_sdist(ray_samples)
+        cp = sdist  # (num_rays, num_samples + 1)
+        wp = weights[..., 0]  # (num_rays, num_samples)
+
+        # resample
+        inds = torch.searchsorted(x_r, cp, side="right")
+        below = torch.clamp(inds - 1, 0, x_r.shape[-1] - 1)
+        above = torch.clamp(inds, 0, x_r.shape[-1] - 1)
+        cdf_g0 = torch.gather(x_r, -1, below)
+        bins_g0 = torch.gather(y_cum, -1, below)
+        cdf_g1 = torch.gather(x_r, -1, above)
+        bins_g1 = torch.gather(y_cum, -1, above)
+
+        t = torch.clip(torch.nan_to_num((cp - cdf_g0) / (cdf_g1 - cdf_g0), 0), 0, 1)
+        bins = bins_g0 + t * (bins_g1 - bins_g0)
+
+        w_gt = bins[:, 1:] - bins[:, :-1]
+
+        # TODO here might be unstable when wp is very small
+        loss_interlevel += torch.mean(torch.clip(w_gt - wp, min=0) ** 2 / (wp + 1e-5))
+
+    return loss_interlevel
+
+
 # Verified
 def lossfun_distortion(t, w):
     """
@@ -260,7 +320,6 @@ def reduction_image_based(image_loss, M):
 
 
 def mse_loss(prediction, target, mask, reduction=reduction_batch_based):
-
     M = torch.sum(mask, (1, 2))
     res = prediction - target
     image_loss = torch.sum(mask * res * res, (1, 2))
@@ -269,7 +328,6 @@ def mse_loss(prediction, target, mask, reduction=reduction_batch_based):
 
 
 def gradient_loss(prediction, target, mask, reduction=reduction_batch_based):
-
     M = torch.sum(mask, (1, 2))
 
     diff = prediction - target
@@ -339,7 +397,6 @@ class ScaleAndShiftInvariantLoss(nn.Module):
         self.__prediction_ssi = None
 
     def forward(self, prediction, target, mask):
-
         scale, shift = compute_scale_and_shift(prediction, target, mask)
         self.__prediction_ssi = scale.view(-1, 1, 1) * prediction + shift.view(-1, 1, 1)
 
@@ -499,7 +556,6 @@ class MultiViewLoss(nn.Module):
         min_ssim[torch.logical_not(min_ssim_valid)] = 0.0  # max ssim_error is 1
 
         if False:
-
             # visualization of topK error computations
 
             import cv2
