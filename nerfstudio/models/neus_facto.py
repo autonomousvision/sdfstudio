@@ -325,9 +325,9 @@ class NeuSFactoModel(NeuSModel):
 
         return loss_dict
 
-      def get_metrics_dict(self, outputs, batch) -> Dict:
+    def get_metrics_dict(self, outputs, batch) -> Dict:
         metrics_dict = super().get_metrics_dict(outputs, batch)
-        
+
         if self.training:
             # training statics
             metrics_dict["activated_encoding"] = self.field.hash_encoding_mask.mean().item()
@@ -335,7 +335,7 @@ class NeuSFactoModel(NeuSModel):
             metrics_dict["curvature_loss_multi"] = self.curvature_loss_multi_factor * self.config.curvature_loss_multi
 
         return metrics_dict
-  
+
     def get_image_metrics_and_images(
         self, outputs: Dict[str, torch.Tensor], batch: Dict[str, torch.Tensor]
     ) -> Tuple[Dict[str, float], Dict[str, torch.Tensor]]:
