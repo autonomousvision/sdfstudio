@@ -62,6 +62,8 @@ class NerfstudioDataParserConfig(DataParserConfig):
     """Whether to automatically scale the poses to fit in +/- 1 bounding box."""
     train_split_percentage: float = 0.9
     """The percent of images to use for training. The remaining images are for eval."""
+    use_all_train_images: bool = False
+    """Whether to use all images for training. If True, all images are used for training."""
 
 
 @dataclass
@@ -169,6 +171,9 @@ class Nerfstudio(DataParser):
         assert len(i_eval) == num_eval_images
         if split == "train":
             indices = i_train
+            if self.config.use_all_train_images:
+                indices = i_all
+                num_train_images = num_images
         elif split in ["val", "test"]:
             indices = i_eval
         else:
@@ -181,7 +186,7 @@ class Nerfstudio(DataParser):
             orientation_method = self.config.orientation_method
 
         poses = torch.from_numpy(np.array(poses).astype(np.float32))
-        poses, _ = camera_utils.auto_orient_and_center_poses(
+        poses, transform_matrix = camera_utils.auto_orient_and_center_poses(
             poses,
             method=orientation_method,
             center_poses=self.config.center_poses,
@@ -190,9 +195,10 @@ class Nerfstudio(DataParser):
         # Scale poses
         scale_factor = 1.0
         if self.config.auto_scale_poses:
-            scale_factor /= torch.max(torch.abs(poses[:, :3, 3]))
+            scale_factor /= float(torch.max(torch.abs(poses[:, :3, 3])))
+        scale_factor *= self.config.scale_factor
 
-        poses[:, :3, 3] *= scale_factor * self.config.scale_factor
+        poses[:, :3, 3] *= scale_factor
 
         # Choose image_filenames and poses based on split, but after auto orient and scaling the poses.
         image_filenames = [image_filenames[i] for i in indices]
@@ -247,11 +253,21 @@ class Nerfstudio(DataParser):
         assert self.downscale_factor is not None
         cameras.rescale_output_resolution(scaling_factor=1.0 / self.downscale_factor)
 
+        if "applied_transform" in meta:
+            applied_transform = torch.tensor(meta["applied_transform"], dtype=transform_matrix.dtype)
+            transform_matrix = transform_matrix @ torch.cat(
+                [applied_transform, torch.tensor([[0, 0, 0, 1]], dtype=transform_matrix.dtype)], 0
+            )
+        if "applied_scale" in meta:
+            applied_scale = float(meta["applied_scale"])
+            scale_factor *= applied_scale
+        
         dataparser_outputs = DataparserOutputs(
             image_filenames=image_filenames,
             cameras=cameras,
             scene_box=scene_box,
             mask_filenames=mask_filenames if len(mask_filenames) > 0 else None,
+            metadata={"transform": transform_matrix, "scale_factor": scale_factor},
         )
         return dataparser_outputs
 

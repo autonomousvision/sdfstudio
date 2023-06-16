@@ -45,11 +45,12 @@ from nerfstudio.data.dataparsers.phototourism_dataparser import (
     PhototourismDataParserConfig,
 )
 from nerfstudio.data.dataparsers.sdfstudio_dataparser import SDFStudioDataParserConfig
-from nerfstudio.engine.optimizers import AdamOptimizerConfig, RAdamOptimizerConfig
+from nerfstudio.engine.optimizers import AdamOptimizerConfig, RAdamOptimizerConfig, AdamWOptimizerConfig
 from nerfstudio.engine.schedulers import (
     ExponentialSchedulerConfig,
     MultiStepSchedulerConfig,
     NeuSSchedulerConfig,
+    MultiStepWarmupSchedulerConfig,
 )
 from nerfstudio.field_components.temporal_distortions import TemporalDistortionKind
 from nerfstudio.fields.sdf_field import SDFFieldConfig
@@ -58,6 +59,8 @@ from nerfstudio.models.dto import DtoOModelConfig
 from nerfstudio.models.instant_ngp import InstantNGPModelConfig
 from nerfstudio.models.mipnerf import MipNerfModel
 from nerfstudio.models.nerfacto import NerfactoModelConfig
+from nerfstudio.models.neuralangelo import NeuralangeloModelConfig
+from nerfstudio.models.bakedangelo import BakedAngeloModelConfig
 from nerfstudio.models.neuralreconW import NeuralReconWModelConfig
 from nerfstudio.models.neus import NeuSModelConfig
 from nerfstudio.models.neus_acc import NeuSAccModelConfig
@@ -99,7 +102,146 @@ descriptions = {
     "neus-facto-bigmlp": "NeuS-facto with big MLP, it is used in training heritage data with 8 gpus",
     "bakedsdf": "Implementation of BackedSDF with multi-res hash grids",
     "bakedsdf-mlp": "Implementation of BackedSDF with large MLPs",
+    "neuralangelo": "Implementation of Neuralangelo",
+    "bakedangelo": "Implementation of Neuralangelo with BakedSDF",
+    "neus-facto-angelo": "Implementation of Neuralangelo with neus-facto",
 }
+
+
+method_configs["bakedangelo"] = Config(
+    method_name="bakedangelo",
+    trainer=TrainerConfig(
+        steps_per_eval_image=5000,
+        steps_per_eval_batch=5000,
+        steps_per_save=20000,
+        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
+        max_num_iterations=1000_001,
+        mixed_precision=False,
+    ),
+    pipeline=VanillaPipelineConfig(
+        datamanager=VanillaDataManagerConfig(
+            dataparser=SDFStudioDataParserConfig(),
+            train_num_rays_per_batch=8192,
+            eval_num_rays_per_batch=1024,
+            camera_optimizer=CameraOptimizerConfig(
+                mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
+            ),
+        ),
+        model=BakedAngeloModelConfig(
+            near_plane=0.01,
+            far_plane=1000.0,
+            overwrite_near_far_plane=True,
+            sdf_field=SDFFieldConfig(
+                use_grid_feature=True,
+                num_layers=1,
+                num_layers_color=4,
+                hidden_dim=256,
+                hidden_dim_color=256,
+                geometric_init=True,
+                bias=1.5,
+                beta_init=0.1,
+                inside_outside=True,
+                use_appearance_embedding=True,
+                use_numerical_gradients=True,
+                base_res=64,
+                max_res=4096,
+                log2_hashmap_size=22,
+                hash_features_per_level=8,
+                hash_smoothstep=False,
+                use_position_encoding=False,
+            ),
+            eikonal_loss_mult=0.01,
+            background_model="grid",
+            proposal_weights_anneal_max_num_iters=10000,
+            use_anneal_beta=True,
+            eval_num_rays_per_chunk=1024,
+            use_spatial_varying_eikonal_loss=False,
+            steps_per_level=10_000,
+            curvature_loss_warmup_steps=20_000,
+            beta_anneal_end=0.0002,
+            beta_anneal_max_num_iters=1000_000,
+        ),
+    ),
+    optimizers={
+        "proposal_networks": {
+            "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
+            "scheduler": MultiStepSchedulerConfig(max_steps=1000_000),
+        },
+        "fields": {
+            "optimizer": AdamWOptimizerConfig(lr=1e-3, eps=1e-15, weight_decay=1e-2),
+            "scheduler": MultiStepWarmupSchedulerConfig(warm_up_end=5000, milestones=[600_000, 800_000], gamma=0.1),
+        },
+        "field_background": {
+            "optimizer": AdamWOptimizerConfig(lr=1e-3, eps=1e-15),
+            "scheduler": MultiStepWarmupSchedulerConfig(warm_up_end=5000, milestones=[300_000, 400_000], gamma=0.1),
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer",
+)
+
+
+method_configs["neuralangelo"] = Config(
+    method_name="neuralangelo",
+    trainer=TrainerConfig(
+        steps_per_eval_image=5000,
+        steps_per_eval_batch=5000,
+        steps_per_save=20000,
+        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
+        max_num_iterations=500_001,
+        mixed_precision=False,
+    ),
+    pipeline=VanillaPipelineConfig(
+        datamanager=VanillaDataManagerConfig(
+            dataparser=SDFStudioDataParserConfig(),
+            train_num_rays_per_batch=512,
+            eval_num_rays_per_batch=512,
+            camera_optimizer=CameraOptimizerConfig(
+                mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
+            ),
+        ),
+        model=NeuralangeloModelConfig(
+            sdf_field=SDFFieldConfig(
+                use_grid_feature=True,
+                num_layers=1,
+                num_layers_color=4,
+                hidden_dim=256,
+                hidden_dim_color=256,
+                geometric_init=True,
+                bias=0.5,
+                beta_init=0.3,
+                inside_outside=False,
+                use_appearance_embedding=False,
+                position_encoding_max_degree=6,
+                use_numerical_gradients=True,
+                base_res=64,
+                max_res=4096,
+                log2_hashmap_size=22,
+                hash_features_per_level=8,
+                hash_smoothstep=False,
+                use_position_encoding=False,
+            ),
+            background_model="mlp",
+            enable_progressive_hash_encoding=True,
+            enable_curvature_loss_schedule=True,
+            enable_numerical_gradients_schedule=True,
+        ),
+    ),
+    optimizers={
+        "fields": {
+            "optimizer": AdamWOptimizerConfig(lr=1e-3, weight_decay=0.01, eps=1e-15),
+            # "scheduler": NeuSSchedulerConfig(warm_up_end=5000, learning_rate_alpha=0.05, max_steps=500000),
+            "scheduler": MultiStepWarmupSchedulerConfig(warm_up_end=5000, milestones=[300_000, 400_000], gamma=0.1),
+        },
+        "field_background": {
+            "optimizer": AdamWOptimizerConfig(lr=1e-3, eps=1e-15),
+            "scheduler": MultiStepWarmupSchedulerConfig(warm_up_end=5000, milestones=[300_000, 400_000], gamma=0.1),
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer",
+)
+
 
 method_configs["bakedsdf"] = Config(
     method_name="bakedsdf",
@@ -227,6 +369,77 @@ method_configs["bakedsdf-mlp"] = Config(
     vis="viewer",
 )
 
+
+method_configs["neus-facto-angelo"] = Config(
+    method_name="neus-facto-angelo",
+    trainer=TrainerConfig(
+        steps_per_eval_image=5000,
+        steps_per_eval_batch=5000,
+        steps_per_save=20000,
+        steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
+        max_num_iterations=1000_001,
+        mixed_precision=False,
+    ),
+    pipeline=VanillaPipelineConfig(
+        datamanager=VanillaDataManagerConfig(
+            dataparser=SDFStudioDataParserConfig(),
+            train_num_rays_per_batch=2048,
+            eval_num_rays_per_batch=1024,
+            camera_optimizer=CameraOptimizerConfig(
+                mode="off", optimizer=AdamOptimizerConfig(lr=6e-4, eps=1e-8, weight_decay=1e-2)
+            ),
+        ),
+        model=NeuSFactoModelConfig(
+            near_plane=0.01,
+            far_plane=1000.0,
+            overwrite_near_far_plane=True,
+            sdf_field=SDFFieldConfig(
+                use_grid_feature=True,
+                num_layers=1,
+                num_layers_color=4,
+                hidden_dim=256,
+                hidden_dim_color=256,
+                geometric_init=True,
+                bias=0.5,
+                beta_init=0.3,
+                inside_outside=False,
+                use_appearance_embedding=True,
+                use_numerical_gradients=True,
+                base_res=64,
+                max_res=4096,
+                log2_hashmap_size=22,
+                hash_features_per_level=8,
+                hash_smoothstep=False,
+                use_position_encoding=False,
+            ),
+            background_model="grid",
+            eval_num_rays_per_chunk=1024,
+            level_init=8,
+            eikonal_loss_mult=0.01,
+            use_anneal_beta=True,
+            enable_progressive_hash_encoding=True,
+            enable_numerical_gradients_schedule=True,
+            enable_curvature_loss_schedule=True,
+            curvature_loss_multi=5e-4,
+        ),
+    ),
+    optimizers={
+        "proposal_networks": {
+            "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
+            "scheduler": MultiStepSchedulerConfig(max_steps=1000_000),
+        },
+        "fields": {
+            "optimizer": AdamOptimizerConfig(lr=1e-3, eps=1e-15),
+            "scheduler": MultiStepWarmupSchedulerConfig(warm_up_end=5000, milestones=[600_000, 800_000], gamma=0.1),
+        },
+        "field_background": {
+            "optimizer": AdamWOptimizerConfig(lr=1e-3, eps=1e-15),
+            "scheduler": MultiStepWarmupSchedulerConfig(warm_up_end=5000, milestones=[300_000, 400_000], gamma=0.1),
+        },
+    },
+    viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
+    vis="viewer",
+)
 
 method_configs["neus-facto"] = Config(
     method_name="neus-facto",

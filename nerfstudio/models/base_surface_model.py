@@ -30,8 +30,7 @@ from torchmetrics.functional import structural_similarity_index_measure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from torchtyping import TensorType
 from typing_extensions import Literal
-
-from nerfstudio.cameras.rays import RayBundle
+from nerfstudio.cameras.rays import RayBundle, RaySamples
 from nerfstudio.field_components.encodings import NeRFEncoding
 from nerfstudio.field_components.field_heads import FieldHeadNames
 from nerfstudio.field_components.spatial_distortions import SceneContraction
@@ -242,18 +241,49 @@ class SurfaceModel(Model):
             return_samples (bool, optional): _description_. Defaults to False.
         """
 
-    def get_outputs(self, ray_bundle: RayBundle) -> Dict:
-        # TODO make this configurable
-        # compute near and far from from sphere with radius 1.0
-        # ray_bundle = self.sphere_collider(ray_bundle)
+    def get_foreground_mask(self, ray_samples: RaySamples) -> TensorType:
+        """_summary_
 
+        Args:
+            ray_samples (RaySamples): _description_
+        """
+        # TODO support multiple foreground type: box and sphere
+        inside_sphere_mask = (ray_samples.frustums.get_start_positions().norm(dim=-1, keepdim=True) < 1.0).float()
+        return inside_sphere_mask
+
+    def forward_background_field_and_merge(self, ray_samples: RaySamples, field_outputs: Dict) -> Dict:
+        """_summary_
+
+        Args:
+            ray_samples (RaySamples): _description_
+            field_outputs (Dict): _description_
+        """
+
+        inside_sphere_mask = self.get_foreground_mask(ray_samples)
+        # TODO only forward the points that are outside the sphere if there is a background model
+
+        field_outputs_bg = self.field_background(ray_samples)
+        field_outputs_bg[FieldHeadNames.ALPHA] = ray_samples.get_alphas(field_outputs_bg[FieldHeadNames.DENSITY])
+
+        field_outputs[FieldHeadNames.ALPHA] = (
+            field_outputs[FieldHeadNames.ALPHA] * inside_sphere_mask
+            + (1.0 - inside_sphere_mask) * field_outputs_bg[FieldHeadNames.ALPHA]
+        )
+        field_outputs[FieldHeadNames.RGB] = (
+            field_outputs[FieldHeadNames.RGB] * inside_sphere_mask
+            + (1.0 - inside_sphere_mask) * field_outputs_bg[FieldHeadNames.RGB]
+        )
+
+        # TODO make everything outside the sphere to be 0
+        return field_outputs
+
+    def get_outputs(self, ray_bundle: RayBundle) -> Dict:
         samples_and_field_outputs = self.sample_and_forward_field(ray_bundle=ray_bundle)
 
         # Shotscuts
         field_outputs = samples_and_field_outputs["field_outputs"]
         ray_samples = samples_and_field_outputs["ray_samples"]
         weights = samples_and_field_outputs["weights"]
-        bg_transmittance = samples_and_field_outputs["bg_transmittance"]
 
         rgb = self.renderer_rgb(rgb=field_outputs[FieldHeadNames.RGB], weights=weights)
         depth = self.renderer_depth(weights=weights, ray_samples=ray_samples)
@@ -267,34 +297,6 @@ class SurfaceModel(Model):
         normal = self.renderer_normal(semantics=field_outputs[FieldHeadNames.NORMAL], weights=weights)
         accumulation = self.renderer_accumulation(weights=weights)
 
-        # background model
-        if self.config.background_model != "none":
-            # TODO remove hard-coded far value
-            # sample inversely from far to 1000 and points and forward the bg model
-            ray_bundle.nears = ray_bundle.fars
-            ray_bundle.fars = torch.ones_like(ray_bundle.fars) * self.config.far_plane_bg
-
-            ray_samples_bg = self.sampler_bg(ray_bundle)
-            # use the same background model for both density field and occupancy field
-            field_outputs_bg = self.field_background(ray_samples_bg)
-            weights_bg = ray_samples_bg.get_weights(field_outputs_bg[FieldHeadNames.DENSITY])
-
-            rgb_bg = self.renderer_rgb(rgb=field_outputs_bg[FieldHeadNames.RGB], weights=weights_bg)
-            depth_bg = self.renderer_depth(weights=weights_bg, ray_samples=ray_samples_bg)
-            accumulation_bg = self.renderer_accumulation(weights=weights_bg)
-
-            # merge background color to forgound color
-            rgb = rgb + bg_transmittance * rgb_bg
-
-            bg_outputs = {
-                "bg_rgb": rgb_bg,
-                "bg_accumulation": accumulation_bg,
-                "bg_depth": depth_bg,
-                "bg_weights": weights_bg,
-            }
-        else:
-            bg_outputs = {}
-
         outputs = {
             "rgb": rgb,
             "accumulation": accumulation,
@@ -306,7 +308,6 @@ class SurfaceModel(Model):
             ),  # used for creating visiblity mask
             "directions_norm": ray_bundle.directions_norm,  # used to scale z_vals for free space and sdf loss
         }
-        outputs.update(bg_outputs)
 
         if self.training:
             grad_points = field_outputs[FieldHeadNames.GRADIENT]
@@ -447,7 +448,6 @@ class SurfaceModel(Model):
     def get_image_metrics_and_images(
         self, outputs: Dict[str, torch.Tensor], batch: Dict[str, torch.Tensor]
     ) -> Tuple[Dict[str, float], Dict[str, torch.Tensor]]:
-
         image = batch["image"].to(self.device)
         rgb = outputs["rgb"]
         acc = colormaps.apply_colormap(outputs["accumulation"])

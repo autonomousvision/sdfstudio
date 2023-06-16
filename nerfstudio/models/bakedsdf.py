@@ -77,6 +77,10 @@ class BakedSDFModelConfig(VolSDFModelConfig):
     """whether to use anneal beta"""
     beta_anneal_max_num_iters: int = 250000
     """Max num iterations for the annealing of beta in laplacian density."""
+    beta_anneal_init: float = 0.1
+    """Initial value of beta for the annealing of beta in laplacian density."""
+    beta_anneal_end: float = 0.001
+    """End value of beta for the annealing of beta in laplacian density."""
     use_anneal_eikonal_weight: bool = False
     """whether to use annealing for eikonal loss weight"""
     eikonal_anneal_max_num_iters: int = 250000
@@ -148,6 +152,11 @@ class BakedSDFFactoModel(VolSDFModel):
 
         param_groups["proposal_networks"] = list(self.proposal_networks.parameters())
 
+        if self.config.background_model != "none":
+            param_groups["field_background"] = list(self.field_background.parameters())
+        else:
+            param_groups["field_background"] = list(self.field_background)
+            
         return param_groups
 
     def get_training_callbacks(
@@ -184,8 +193,8 @@ class BakedSDFFactoModel(VolSDFModel):
         if self.config.use_anneal_beta:
             # anneal the beta of volsdf before each training iterations
             M = self.config.beta_anneal_max_num_iters
-            beta_init = 0.1
-            beta_end = 0.001
+            beta_init = self.config.beta_anneal_init
+            beta_end = self.config.beta_anneal_end
 
             def set_beta(step):
                 # bakedsdf's beta schedule
@@ -225,10 +234,14 @@ class BakedSDFFactoModel(VolSDFModel):
 
     def sample_and_forward_field(self, ray_bundle: RayBundle):
         ray_samples, weights_list, ray_samples_list = self.proposal_sampler(ray_bundle, density_fns=self.density_fns)
-
+        # TODO only forward the points that are inside the sphere
         field_outputs = self.field(ray_samples)
-        weights, transmittance = ray_samples.get_weights_and_transmittance(field_outputs[FieldHeadNames.DENSITY])
-        bg_transmittance = transmittance[:, -1, :]
+        field_outputs[FieldHeadNames.ALPHA] = ray_samples.get_alphas(field_outputs[FieldHeadNames.DENSITY])
+
+        if self.config.background_model != "none":
+            field_outputs = self.forward_background_field_and_merge(ray_samples, field_outputs)
+
+        weights = ray_samples.get_weights_from_alphas(field_outputs[FieldHeadNames.ALPHA])
 
         weights_list.append(weights)
         ray_samples_list.append(ray_samples)
@@ -237,7 +250,6 @@ class BakedSDFFactoModel(VolSDFModel):
             "ray_samples": ray_samples,
             "field_outputs": field_outputs,
             "weights": weights,
-            "bg_transmittance": bg_transmittance,
             "weights_list": weights_list,
             "ray_samples_list": ray_samples_list,
         }

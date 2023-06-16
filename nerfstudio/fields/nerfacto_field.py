@@ -327,7 +327,7 @@ class TorchNerfactoField(Field):
         self,
         aabb,
         num_images: int,
-        position_encoding: Encoding = HashEncoding(),
+        position_encoding: Encoding = HashEncoding(implementation="torch"),
         direction_encoding: Encoding = SHEncoding(),
         base_mlp_num_layers: int = 3,
         base_mlp_layer_width: int = 64,

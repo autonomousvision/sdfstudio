@@ -167,6 +167,9 @@ class SDFStudioDataParserConfig(DataParserConfig):
     train_val_no_overlap: bool = False
     """remove selected / sampled validation images from training set"""
     auto_orient: bool = False
+    """automatically orient the scene such that the up direction is the same as the viewer's up direction"""
+    load_dtu_highres: bool = False
+    """load high resolution images from DTU dataset, should only be used for the preprocessed DTU dataset"""
 
 
 @dataclass
@@ -216,6 +219,14 @@ class SDFStudio(DataParser):
             cy.append(intrinsics[1, 2])
             camera_to_worlds.append(camtoworld)
 
+            # here is hard coded for DTU high-res images
+            if self.config.load_dtu_highres:
+                image_filename = self.config.data / "image" / frame["rgb_path"].replace("_rgb", "")
+                intrinsics[:2, :] *= 1200 / 384.0
+                intrinsics[0, 2] += 200
+                height, width = 1200, 1600
+                meta["height"], meta["width"] = height, width
+            
             if self.config.include_mono_prior:
                 assert meta["has_mono_prior"]
                 # load mono depth

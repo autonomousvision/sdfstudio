@@ -161,6 +161,8 @@ class TrainerConfig(PrintableConfig):
     """Optionally specify model config to load from; if none, will use the default config?"""
     load_scheduler: bool = True
     """Whether to load the lr scheduler state_dict if exists"""
+    accumulate_grad_steps: int = 1
+    """Number of gradient steps to accumulate before taking an optimizer step."""
 
 
 # Viewer related configs
