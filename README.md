@@ -10,6 +10,13 @@
 SDFStudio is a unified and modular framework for neural implicit surface reconstruction, built on top of the awesome nerfstudio project. We provide a unified implementation of three major implicit surface reconstruction methods: UniSurf, VolSDF, and NeuS. SDFStudio also supports various scene representions, such as MLPs, Tri-plane, and Multi-res. feature grids, and multiple point sampling strategies such as surface-guided sampling as in UniSurf, and Voxel-surface guided sampling from NeuralReconW. It further integrates recent advances in the area such as the utillization of monocular cues (MonoSDF), geometry regularization (UniSurf) and multi-view consistency (Geo-NeuS). Thanks to the unified and modular implementation, SDFStudio makes it easy to transfer ideas from one method to another. For example, Mono-NeuS applies the idea from MonoSDF to NeuS, and Geo-VolSDF applies the idea from Geo-NeuS to VolSDF.
 
 # Updates
+
+**2023.06.16**: Add `bakedangelo` which combines `BakedSDF` with numerical gridents and progressive training of `Neuralangelo`.
+
+**2023.06.16**: Add `neus-facto-angelo` which combines `neus-facto` with numerical gridents and progressive training of `Neuralangelo`.
+
+**2023.06.16**: Support [Neuralangelo](https://research.nvidia.com/labs/dir/neuralangelo/).
+
 **2023.03.12**: Support [BakedSDF](https://bakedsdf.github.io/).
 
 **2022.12.28**: Support [Neural RGB-D Surface Reconstruction](https://dazinovic.github.io/neural-rgbd-surface-reconstruction/).
