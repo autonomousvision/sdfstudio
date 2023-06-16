@@ -252,6 +252,7 @@ class NeuSFactoModel(NeuSModel):
             )
         # schedule the curvature loss weight
         # linear warmup for 5000 steps to 5e-4 and then decay as delta
+        self.curvature_loss_multi_factor = 1.0
         if self.config.enable_curvature_loss_schedule:
 
             def set_curvature_loss_mult_factor(step):
