@@ -118,7 +118,7 @@ class NeuSFactoModel(NeuSModel):
             num_nerf_samples_per_ray=self.config.num_neus_samples_per_ray,
             num_proposal_samples_per_ray=self.config.num_proposal_samples_per_ray,
             num_proposal_network_iterations=self.config.num_proposal_iterations,
-            use_uniform_sampler=True,
+            use_uniform_sampler=False,
             single_jitter=self.config.use_single_jitter,
             update_sched=update_schedule,
         )
