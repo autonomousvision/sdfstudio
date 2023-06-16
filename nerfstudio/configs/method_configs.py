@@ -416,6 +416,11 @@ method_configs["neus-facto-angelo"] = Config(
             eval_num_rays_per_chunk=1024,
             level_init=8,
             eikonal_loss_mult=0.01,
+            use_anneal_beta=True,
+            enable_progressive_hash_encoding=True,
+            enable_numerical_gradients_schedule=True,
+            enable_curvature_loss_schedule=True,
+            curvature_loss_multi=5e-4,
         ),
     ),
     optimizers={
