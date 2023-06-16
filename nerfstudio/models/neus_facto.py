@@ -34,7 +34,7 @@ from nerfstudio.engine.callbacks import (
 from nerfstudio.field_components.field_heads import FieldHeadNames
 from nerfstudio.models.neus import NeuSModel, NeuSModelConfig
 from nerfstudio.fields.density_fields import HashMLPDensityField
-from nerfstudio.model_components.losses import interlevel_loss
+from nerfstudio.model_components.losses import interlevel_loss, interlevel_loss_zip
 from nerfstudio.model_components.ray_samplers import ProposalNetworkSampler
 from nerfstudio.utils import colormaps
 
@@ -187,7 +187,7 @@ class NeuSFactoModel(NeuSModel):
         loss_dict = super().get_loss_dict(outputs, batch, metrics_dict)
 
         if self.training:
-            loss_dict["interlevel_loss"] = self.config.interlevel_loss_mult * interlevel_loss(
+            loss_dict["interlevel_loss"] = self.config.interlevel_loss_mult * interlevel_loss_zip(
                 outputs["weights_list"], outputs["ray_samples_list"]
             )
 
