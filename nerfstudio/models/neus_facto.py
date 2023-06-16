@@ -73,6 +73,14 @@ class NeuSFactoModelConfig(NeuSModelConfig):
     """Max num iterations for the annealing function."""
     use_single_jitter: bool = True
     """Whether use single jitter or not for the proposal networks."""
+    use_anneal_beta: bool = False
+    """whether to anneal beta of neus or not similar to bakedsdf"""
+    beta_anneal_max_num_iters: int = 1000_000
+    """max num iterations for the annealing function of beta"""
+    beta_anneal_init: float = 0.05
+    """initial beta for annealing function"""
+    beta_anneal_end: float = 0.0002
+    """final beta for annealing function"""
 
 
 class NeuSFactoModel(NeuSModel):
@@ -113,7 +121,7 @@ class NeuSFactoModel(NeuSModel):
 
         # update proposal network every iterations
         update_schedule = lambda step: -1
-        
+
         self.proposal_sampler = ProposalNetworkSampler(
             num_nerf_samples_per_ray=self.config.num_neus_samples_per_ray,
             num_proposal_samples_per_ray=self.config.num_proposal_samples_per_ray,
@@ -159,6 +167,26 @@ class NeuSFactoModel(NeuSModel):
                 )
             )
 
+        if self.config.use_anneal_beta:
+            # anneal the beta of volsdf before each training iterations
+            M = self.config.beta_anneal_max_num_iters
+            beta_init = self.config.beta_anneal_init
+            beta_end = self.config.beta_anneal_end
+
+            def set_beta(step):
+                # bakedsdf's beta schedule adapted to neus
+                train_frac = np.clip(step / M, 0, 1)
+                beta = beta_init / (1 + (beta_init - beta_end) / beta_end * (train_frac**0.8))
+                beta = np.log(1.0 / beta) / 10.0
+                self.field.deviation_network.variance.data[...] = beta
+
+            callbacks.append(
+                TrainingCallback(
+                    where_to_run=[TrainingCallbackLocation.BEFORE_TRAIN_ITERATION],
+                    update_every_num_iters=1,
+                    func=set_beta,
+                )
+            )
         return callbacks
 
     def sample_and_forward_field(self, ray_bundle: RayBundle):
