@@ -151,13 +151,14 @@ method_configs["bakedangelo"] = Config(
                 use_position_encoding=False,
             ),
             eikonal_loss_mult=0.01,
-            background_model="none",
+            background_model="grid",
             proposal_weights_anneal_max_num_iters=10000,
             use_anneal_beta=True,
             eval_num_rays_per_chunk=1024,
-            use_spatial_varying_eikonal_loss=True,
+            use_spatial_varying_eikonal_loss=False,
             steps_per_level=10_000,
             curvature_loss_warmup_steps=20_000,
+            beta_anneal_end=0.0002,
             beta_anneal_max_num_iters=1000_000,
         ),
     ),
@@ -167,7 +168,7 @@ method_configs["bakedangelo"] = Config(
             "scheduler": MultiStepSchedulerConfig(max_steps=1000_000),
         },
         "fields": {
-            "optimizer": AdamOptimizerConfig(lr=1e-3, eps=1e-15),
+            "optimizer": AdamWOptimizerConfig(lr=1e-3, eps=1e-15, weight_decay=1e-2),
             "scheduler": MultiStepWarmupSchedulerConfig(warm_up_end=5000, milestones=[600_000, 800_000], gamma=0.1),
         },
         "field_background": {
@@ -178,7 +179,6 @@ method_configs["bakedangelo"] = Config(
     viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
     vis="viewer",
 )
-
 
 
 method_configs["neuralangelo"] = Config(
