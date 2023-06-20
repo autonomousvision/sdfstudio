@@ -25,8 +25,6 @@ SDFStudio is a unified and modular framework for neural implicit surface reconst
 
 ## 1. Installation: Setup the environment
 
-SDFStudio is built on top of [nerfstudio](https://github.com/nerfstudio-project/nerfstudio). If you have already installed the nerfstudio environment, you can skip the following steps.
-
 ### Prerequisites
 
 CUDA must be installed on the system. This library has been tested with version 11.3. You can find more information about installing CUDA [here](https://docs.nvidia.com/cuda/cuda-quick-start-guide/index.html).
@@ -93,10 +91,10 @@ Navigating to the link at the end of the terminal will load the webviewer (devel
 It is also possible to load a pretrained model by running
 
 ```bash
-ns-train neus-facto sdfstudio-data --data data/sdfstudio-demo-data/dtu-scan65 --trainer.load-dir {outputs/neus-facto-dtu65/neus-facto/XXX/sdfstudio_models}
+ns-train neus-facto --trainer.load-dir {outputs/neus-facto-dtu65/neus-facto/XXX/sdfstudio_models} sdfstudio-data --data data/sdfstudio-demo-data/dtu-scan65 
 ```
 
-Note that this will automatically resume training. If you do not want to resume training, add `--viewer.start-train False` to your training command.
+This will automatically resume training. If you do not want to resume training, add `--viewer.start-train False` to your training command. **Note that the order of command matters, dataparser subcommand needs to come after the model subcommand.**
 
 ## 3. Exporting Results
 
