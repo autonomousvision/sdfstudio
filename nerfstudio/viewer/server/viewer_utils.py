@@ -22,14 +22,12 @@ import os
 import sys
 import threading
 import time
-import warnings
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import cv2
 import numpy as np
 import torch
-from cryptography.utils import CryptographyDeprecationWarning
 from rich.console import Console
 
 from nerfstudio.cameras.cameras import Cameras
@@ -46,7 +44,6 @@ from nerfstudio.viewer.server.subprocess import run_viewer_bridge_server_as_subp
 from nerfstudio.viewer.server.utils import get_intrinsics_matrix_and_camera_to_world_h
 from nerfstudio.viewer.server.visualizer import Viewer
 
-warnings.filterwarnings("ignore", category=CryptographyDeprecationWarning)
 
 CONSOLE = Console(width=120)
 
