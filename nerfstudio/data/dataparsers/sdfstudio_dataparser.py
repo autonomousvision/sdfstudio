@@ -33,6 +33,7 @@ from nerfstudio.data.dataparsers.base_dataparser import (
     DataparserOutputs,
 )
 from nerfstudio.data.scene_box import SceneBox
+from nerfstudio.data.utils.data_utils import create_masked_img
 from nerfstudio.utils.images import BasicImages
 from nerfstudio.utils.io import load_from_json
 
@@ -170,6 +171,12 @@ class SDFStudioDataParserConfig(DataParserConfig):
     """automatically orient the scene such that the up direction is the same as the viewer's up direction"""
     load_dtu_highres: bool = False
     """load high resolution images from DTU dataset, should only be used for the preprocessed DTU dataset"""
+    train_with_masked_imgs: bool = False
+    """whether or not to mask out objects using foreground masks and train with masked images"""
+    sample_pixels_from_mask: bool = False
+    """if true, pixels are sampled only from masked regions"""
+    masked_img_dir: str = "masked_image"
+    """name of the folder where masked images are stored if train_with_masked_imgs is true"""
 
 
 @dataclass
@@ -192,6 +199,7 @@ class SDFStudio(DataParser):
                 indices = [i for i in indices if i % self.config.skip_every_for_val_split != 0]
 
         image_filenames = []
+        mask_filenames = []
         depth_images = []
         normal_images = []
         sensor_depth_images = []
@@ -207,6 +215,33 @@ class SDFStudio(DataParser):
                 continue
 
             image_filename = self.config.data / frame["rgb_path"]
+
+            if self.config.train_with_masked_imgs:
+                assert meta["has_foreground_mask"]
+                mask_filename = self.config.data / frame["foreground_mask"]
+                mask = np.array(Image.open(mask_filename), dtype=np.float32) / 255.0
+                if len(mask.shape) == 3:
+                    mask = mask[..., 0]
+                masked_img_dir_path = self.config.data / self.config.masked_img_dir
+                image_filename = create_masked_img(image_filename, mask_filename, masked_img_dir_path)
+
+            if self.config.include_foreground_mask:
+                assert meta["has_foreground_mask"]
+                if self.config.train_with_masked_imgs:
+                    foreground_mask_images.append(torch.from_numpy(mask[..., None]))
+                else:
+                    # load foreground mask
+                    foreground_mask = np.array(Image.open(self.config.data / frame["foreground_mask"]), dtype="uint8")
+                    foreground_mask = foreground_mask[..., :1]
+                    foreground_mask_images.append(torch.from_numpy(foreground_mask).float() / 255.0)
+
+            if self.config.sample_pixels_from_mask:
+                # nerfstudio's pixel sampler requires single channel masks
+                mask_img = Image.fromarray((255.0 * mask).astype(np.uint8))
+                mask_filename = mask_filename.parent / self.config.masked_img_dir / mask_filename.name
+                mask_img.save(mask_filename)
+
+            mask_filenames.append(mask_filename)
 
             intrinsics = torch.tensor(frame["intrinsics"])
             camtoworld = torch.tensor(frame["camtoworld"])
@@ -226,11 +261,13 @@ class SDFStudio(DataParser):
                 intrinsics[0, 2] += 200
                 height, width = 1200, 1600
                 meta["height"], meta["width"] = height, width
-            
+
             if self.config.include_mono_prior:
                 assert meta["has_mono_prior"]
                 # load mono depth
                 depth = np.load(self.config.data / frame["mono_depth_path"])
+                if self.config.train_with_masked_imgs:
+                    depth = depth * mask
                 depth_images.append(torch.from_numpy(depth).float())
 
                 # load mono normal
@@ -247,20 +284,18 @@ class SDFStudio(DataParser):
 
                 normal_map = rot @ normal_map
                 normal_map = normal_map.permute(1, 0).reshape(*normal.shape[1:], 3)
+                if self.config.train_with_masked_imgs:
+                    normal_map = normal_map * torch.from_numpy(mask[..., None])
                 normal_images.append(normal_map)
 
             if self.config.include_sensor_depth:
                 assert meta["has_sensor_depth"]
                 # load sensor depth
                 sensor_depth = np.load(self.config.data / frame["sensor_depth_path"])
+                if self.config.train_with_masked_imgs:
+                    # TODO: Maybe set background depth to very large value instead of 0?
+                    sensor_depth = sensor_depth * mask
                 sensor_depth_images.append(torch.from_numpy(sensor_depth).float())
-
-            if self.config.include_foreground_mask:
-                assert meta["has_foreground_mask"]
-                # load foreground mask
-                foreground_mask = np.array(Image.open(self.config.data / frame["foreground_mask"]), dtype="uint8")
-                foreground_mask = foreground_mask[..., :1]
-                foreground_mask_images.append(torch.from_numpy(foreground_mask).float() / 255.0)
 
             if self.config.include_sfm_points:
                 assert meta["has_sparse_sfm_points"]
@@ -374,6 +409,7 @@ class SDFStudio(DataParser):
         dataparser_outputs = DataparserOutputs(
             image_filenames=image_filenames,
             cameras=cameras,
+            mask_filenames=mask_filenames if self.config.sample_pixels_from_mask else None,
             scene_box=scene_box,
             additional_inputs=additional_inputs_dict,
             depths=depth_images,
