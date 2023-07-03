@@ -173,7 +173,7 @@ class SDFStudioDataParserConfig(DataParserConfig):
     """load high resolution images from DTU dataset, should only be used for the preprocessed DTU dataset"""
     train_with_masked_imgs: bool = False
     """whether or not to mask out objects using foreground masks and train with masked images"""
-    sample_pixels_from_mask: bool = False
+    sample_from_mask: bool = False
     """if true, pixels are sampled only from masked regions"""
     masked_img_dir: str = "masked_image"
     """name of the folder where masked images are stored if train_with_masked_imgs is true"""
@@ -216,38 +216,28 @@ class SDFStudio(DataParser):
 
             image_filename = self.config.data / frame["rgb_path"]
 
-            if self.config.train_with_masked_imgs:
+            if (
+                self.config.train_with_masked_imgs
+                or self.config.include_foreground_mask
+                or self.config.sample_from_mask
+            ):
                 assert meta["has_foreground_mask"]
                 mask_filename = self.config.data / frame["foreground_mask"]
                 mask = np.array(Image.open(mask_filename), dtype=np.float32) / 255.0
                 if len(mask.shape) == 3:
                     mask = mask[..., 0]
+
+            if self.config.train_with_masked_imgs:
                 masked_img_dir_path = self.config.data / self.config.masked_img_dir
                 image_filename = create_masked_img(image_filename, mask_filename, masked_img_dir_path)
 
             if self.config.include_foreground_mask:
-                assert meta["has_foreground_mask"]
-                mask_filename = self.config.data / frame["foreground_mask"]
-                if self.config.train_with_masked_imgs:
-                    foreground_mask_images.append(torch.from_numpy(mask[..., None]))
-                else:
-                    # load foreground mask
-                    foreground_mask = np.array(Image.open(mask_filename), dtype="uint8")
-                    foreground_mask = foreground_mask[..., :1]
-                    foreground_mask_images.append(torch.from_numpy(foreground_mask).float() / 255.0)
+                foreground_mask = mask[..., None]
+                foreground_mask_images.append(torch.from_numpy(foreground_mask).float())
 
-            if self.config.sample_pixels_from_mask:
-                assert meta["has_foreground_mask"]
+            if self.config.sample_from_mask:
                 # nerfstudio's pixel sampler requires single channel masks
-                if self.config.train_with_masked_imgs:
-                    mask_img = Image.fromarray((255.0 * mask).astype(np.uint8))
-                if self.config.include_foreground_mask:
-                    mask_img = Image.fromarray(foreground_mask[..., 0])
-                else:
-                    mask_filename = self.config.data / frame["foreground_mask"]
-                    mask = np.array(Image.open(mask_filename), dtype=np.uint8)
-                    mask = mask[..., 0]
-                    mask_img = Image.fromarray(mask)
+                mask_img = Image.fromarray((255.0 * mask).astype(np.uint8))
                 mask_filename = mask_filename.parent / self.config.masked_img_dir / mask_filename.name
                 mask_img.save(mask_filename)
                 mask_filenames.append(mask_filename)
@@ -418,7 +408,7 @@ class SDFStudio(DataParser):
         dataparser_outputs = DataparserOutputs(
             image_filenames=image_filenames,
             cameras=cameras,
-            mask_filenames=mask_filenames if self.config.sample_pixels_from_mask else None,
+            mask_filenames=mask_filenames if self.config.sample_from_mask else None,
             scene_box=scene_box,
             additional_inputs=additional_inputs_dict,
             depths=depth_images,
