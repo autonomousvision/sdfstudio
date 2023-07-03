@@ -227,21 +227,30 @@ class SDFStudio(DataParser):
 
             if self.config.include_foreground_mask:
                 assert meta["has_foreground_mask"]
+                mask_filename = self.config.data / frame["foreground_mask"]
                 if self.config.train_with_masked_imgs:
                     foreground_mask_images.append(torch.from_numpy(mask[..., None]))
                 else:
                     # load foreground mask
-                    foreground_mask = np.array(Image.open(self.config.data / frame["foreground_mask"]), dtype="uint8")
+                    foreground_mask = np.array(Image.open(mask_filename), dtype="uint8")
                     foreground_mask = foreground_mask[..., :1]
                     foreground_mask_images.append(torch.from_numpy(foreground_mask).float() / 255.0)
 
             if self.config.sample_pixels_from_mask:
+                assert meta["has_foreground_mask"]
                 # nerfstudio's pixel sampler requires single channel masks
-                mask_img = Image.fromarray((255.0 * mask).astype(np.uint8))
+                if self.config.train_with_masked_imgs:
+                    mask_img = Image.fromarray((255.0 * mask).astype(np.uint8))
+                if self.config.include_foreground_mask:
+                    mask_img = Image.fromarray(foreground_mask[..., 0])
+                else:
+                    mask_filename = self.config.data / frame["foreground_mask"]
+                    mask = np.array(Image.open(mask_filename), dtype=np.uint8)
+                    mask = mask[..., 0]
+                    mask_img = Image.fromarray(mask)
                 mask_filename = mask_filename.parent / self.config.masked_img_dir / mask_filename.name
                 mask_img.save(mask_filename)
-
-            mask_filenames.append(mask_filename)
+                mask_filenames.append(mask_filename)
 
             intrinsics = torch.tensor(frame["intrinsics"])
             camtoworld = torch.tensor(frame["camtoworld"])
