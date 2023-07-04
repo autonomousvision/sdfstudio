@@ -61,7 +61,6 @@ def create_masked_img(img_filepath: Path, mask_filepath: Path, output_dir: Path)
     """
     img = np.array(Image.open(img_filepath), dtype=np.float32)
     mask = np.array(Image.open(mask_filepath), dtype=np.float32) / 255.0
-    os.makedirs(str(output_dir), exist_ok=True)
     assert len(img.shape) == 3
     if img.shape[-1] == 4:
         img = img[:, :, :3]

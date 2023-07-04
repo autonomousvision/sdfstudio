@@ -15,6 +15,7 @@
 """Data parser for friends dataset"""
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional, Type
@@ -226,9 +227,11 @@ class SDFStudio(DataParser):
                 mask = np.array(Image.open(mask_filename), dtype=np.float32) / 255.0
                 if len(mask.shape) == 3:
                     mask = mask[..., 0]
+                if self.config.train_with_masked_imgs or self.config.sample_from_mask:
+                    masked_img_dir_path = self.config.data / self.config.masked_img_dir
+                    os.makedirs(str(masked_img_dir_path), exist_ok=True)
 
             if self.config.train_with_masked_imgs:
-                masked_img_dir_path = self.config.data / self.config.masked_img_dir
                 image_filename = create_masked_img(image_filename, mask_filename, masked_img_dir_path)
 
             if self.config.include_foreground_mask:
@@ -238,7 +241,7 @@ class SDFStudio(DataParser):
             if self.config.sample_from_mask:
                 # nerfstudio's pixel sampler requires single channel masks
                 mask_img = Image.fromarray((255.0 * mask).astype(np.uint8))
-                mask_filename = mask_filename.parent / self.config.masked_img_dir / mask_filename.name
+                mask_filename = masked_img_dir_path / mask_filename.name
                 mask_img.save(mask_filename)
                 mask_filenames.append(mask_filename)
 
