@@ -211,22 +211,23 @@ class SDFStudio(DataParser):
             intrinsics = torch.tensor(frame["intrinsics"])
             camtoworld = torch.tensor(frame["camtoworld"])
 
-            # append data
-            image_filenames.append(image_filename)
-            fx.append(intrinsics[0, 0])
-            fy.append(intrinsics[1, 1])
-            cx.append(intrinsics[0, 2])
-            cy.append(intrinsics[1, 2])
-            camera_to_worlds.append(camtoworld)
-
             # here is hard coded for DTU high-res images
             if self.config.load_dtu_highres:
+                # print(frame["rgb_path"])
                 image_filename = self.config.data / "image" / frame["rgb_path"].replace("_rgb", "")
                 intrinsics[:2, :] *= 1200 / 384.0
                 intrinsics[0, 2] += 200
                 height, width = 1200, 1600
                 meta["height"], meta["width"] = height, width
             
+            # append data
+            fx.append(intrinsics[0, 0])
+            fy.append(intrinsics[1, 1])
+            cx.append(intrinsics[0, 2])
+            cy.append(intrinsics[1, 2])
+            camera_to_worlds.append(camtoworld)
+            image_filenames.append(image_filename)
+
             if self.config.include_mono_prior:
                 assert meta["has_mono_prior"]
                 # load mono depth
