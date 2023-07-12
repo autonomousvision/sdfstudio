@@ -213,7 +213,6 @@ class SDFStudio(DataParser):
 
             # here is hard coded for DTU high-res images
             if self.config.load_dtu_highres:
-                # print(frame["rgb_path"])
                 image_filename = self.config.data / "image" / frame["rgb_path"].replace("_rgb", "")
                 intrinsics[:2, :] *= 1200 / 384.0
                 intrinsics[0, 2] += 200
