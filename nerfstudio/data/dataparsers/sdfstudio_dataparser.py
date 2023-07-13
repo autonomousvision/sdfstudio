@@ -152,8 +152,9 @@ class SDFStudioDataParserConfig(DataParserConfig):
     """whether or not to load sfm points"""
     scale_factor: float = 1.0
     """How much to scale the camera origins by."""
-    downscale_factor: Optional[int] = None
-    """How much to downscale images. If not set, images are chosen such that the max dimension is <1600px."""
+    # TODO supports downsample
+    # downscale_factor: Optional[int] = None
+    # """How much to downscale images. If not set, images are chosen such that the max dimension is <1600px."""
     orientation_method: Literal["up", "none"] = "up"
     """The method to use for orientation."""
     center_poses: bool = False
@@ -259,7 +260,17 @@ class SDFStudio(DataParser):
             if self.config.include_foreground_mask:
                 assert meta["has_foreground_mask"]
                 # load foreground mask
-                foreground_mask = np.array(Image.open(self.config.data / frame["foreground_mask"]), dtype="uint8")
+                if self.config.load_dtu_highres:
+                    # filenames format is 000.png
+                    foreground_mask = np.array(
+                        Image.open(
+                            self.config.data / "mask" / frame["foreground_mask"].replace("_foreground_mask", "")[-7:]
+                        ),
+                        dtype="uint8",
+                    )
+                else:
+                    # filenames format is 000000_foreground_mask.png
+                    foreground_mask = np.array(Image.open(self.config.data / frame["foreground_mask"]), dtype="uint8")
                 foreground_mask = foreground_mask[..., :1]
                 foreground_mask_images.append(torch.from_numpy(foreground_mask).float() / 255.0)
 
