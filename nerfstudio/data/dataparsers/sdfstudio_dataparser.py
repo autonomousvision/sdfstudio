@@ -178,6 +178,14 @@ class SDFStudioDataParserConfig(DataParserConfig):
     """load high resolution images from DTU dataset, should only be used for the preprocessed DTU dataset"""
 
 
+def filter_list(list_to_filter, indices):
+    """Returns a copy list with only selected indices"""
+    if list_to_filter:
+        return [list_to_filter[i] for i in indices]
+    else:
+        return []
+
+
 @dataclass
 class SDFStudio(DataParser):
     """SDFStudio Dataset"""
@@ -188,11 +196,8 @@ class SDFStudio(DataParser):
         # load meta data
         meta = load_from_json(self.config.data / "meta_data.json")
 
-        assert (
-            self.config.load_dtu_highres != self.config.include_mono_prior
-        ), "load_dtu_highres and include_mono_prior are mutually exclusive."
-
         indices = list(range(len(meta["frames"])))
+
         # subsample to avoid out-of-memory for validation set
         if split != "train" and self.config.skip_every_for_val_split >= 1:
             indices = indices[:: self.config.skip_every_for_val_split]
@@ -200,6 +205,7 @@ class SDFStudio(DataParser):
             # if you use this option, training set should not contain any image in validation set
             if self.config.train_val_no_overlap:
                 indices = [i for i in indices if i % self.config.skip_every_for_val_split != 0]
+        # print(split, indices)
 
         image_filenames = []
         depth_images = []
@@ -213,9 +219,6 @@ class SDFStudio(DataParser):
         cy = []
         camera_to_worlds = []
         for i, frame in enumerate(meta["frames"]):
-            if i not in indices:
-                continue
-
             image_filename = self.config.data / frame["rgb_path"]
 
             intrinsics = torch.tensor(frame["intrinsics"])
@@ -341,13 +344,13 @@ class SDFStudio(DataParser):
 
         height, width = meta["height"], meta["width"]
         cameras = Cameras(
-            fx=fx,
-            fy=fy,
-            cx=cx,
-            cy=cy,
+            fx=fx[indices],
+            fy=fy[indices],
+            cx=cx[indices],
+            cy=cy[indices],
             height=height,
             width=width,
-            camera_to_worlds=camera_to_worlds[:, :3, :4],
+            camera_to_worlds=camera_to_worlds[indices, :3, :4],
             camera_type=CameraType.PERSPECTIVE,
         )
 
@@ -356,7 +359,13 @@ class SDFStudio(DataParser):
 
         if self.config.include_mono_prior:
             additional_inputs_dict = {
-                "cues": {"func": get_depths_and_normals, "kwargs": {"depths": depth_images, "normals": normal_images}}
+                "cues": {
+                    "func": get_depths_and_normals,
+                    "kwargs": {
+                        "depths": filter_list(depth_images, indices),
+                        "normals": filter_list(normal_images, indices),
+                    },
+                }
             }
         else:
             additional_inputs_dict = {}
@@ -364,19 +373,19 @@ class SDFStudio(DataParser):
         if self.config.include_sensor_depth:
             additional_inputs_dict["sensor_depth"] = {
                 "func": get_sensor_depths,
-                "kwargs": {"sensor_depths": sensor_depth_images},
+                "kwargs": {"sensor_depths": filter_list(sensor_depth_images, indices)},
             }
 
         if self.config.include_foreground_mask:
             additional_inputs_dict["foreground_masks"] = {
                 "func": get_foreground_masks,
-                "kwargs": {"fg_masks": foreground_mask_images},
+                "kwargs": {"fg_masks": filter_list(foreground_mask_images, indices)},
             }
 
         if self.config.include_sfm_points:
             additional_inputs_dict["sfm_points"] = {
                 "func": get_sparse_sfm_points,
-                "kwargs": {"sfm_points": sfm_points},
+                "kwargs": {"sfm_points": filter_list(sfm_points, indices)},
             }
         # load pair information
         pairs_path = self.config.data / "pairs.txt"
@@ -392,9 +401,10 @@ class SDFStudio(DataParser):
                     sources_array = [sources_array[0]] + sources_array[:1:-1]
                 pairs_srcs.append(sources_array)
             pairs_srcs = torch.tensor(pairs_srcs)
-            all_imgs = torch.stack(
-                [get_image(image_filename) for image_filename in sorted(image_filenames)], axis=0
-            ).cuda()
+            # TODO: check correctness of sorting
+            all_imgs = torch.stack([get_image(image_filename) for image_filename in sorted(image_filenames)], axis=0)[
+                indices
+            ].cuda()
 
             additional_inputs_dict["pairs"] = {
                 "func": get_src_from_pairs,
@@ -406,12 +416,19 @@ class SDFStudio(DataParser):
                 },
             }
 
+        # print("n depth images", len(filter_list(depth_images, indices)))
+        # print("n normal images", len(filter_list(normal_images, indices)))
+        # for key_1, value in additional_inputs_dict.items():
+        #     print(key_1)
+        #     for key_2, value in value["kwargs"].items():
+        #         print(key_2, len(value))
+
         dataparser_outputs = DataparserOutputs(
-            image_filenames=image_filenames,
+            image_filenames=filter_list(image_filenames, indices),
             cameras=cameras,
             scene_box=scene_box,
             additional_inputs=additional_inputs_dict,
-            depths=depth_images,
-            normals=normal_images,
+            depths=filter_list(depth_images, indices),
+            normals=filter_list(normal_images, indices),
         )
         return dataparser_outputs
