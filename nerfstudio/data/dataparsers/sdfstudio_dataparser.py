@@ -154,8 +154,6 @@ class SDFStudioDataParserConfig(DataParserConfig):
     """How much to scale the camera origins by."""
     downscale_factor: Optional[int] = None
     """How much to downscale images. If not set, images are chosen such that the max dimension is <1600px."""
-    scene_scale: float = 1.0
-    """How much to scale the region of interest by."""
     orientation_method: Literal["up", "none"] = "up"
     """The method to use for orientation."""
     center_poses: bool = False
