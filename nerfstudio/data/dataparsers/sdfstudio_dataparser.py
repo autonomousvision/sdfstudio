@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional, Type
+from typing_extensions import Literal
 
 import numpy as np
 import torch
@@ -149,12 +150,18 @@ class SDFStudioDataParserConfig(DataParserConfig):
     """whether or not to load foreground mask"""
     include_sfm_points: bool = False
     """whether or not to load sfm points"""
-    downscale_factor: int = 1
-    scene_scale: float = 2.0
-    """
-    Sets the bounding cube to have edge length of this size.
-    The longest dimension of the Friends axis-aligned bbox will be scaled to this value.
-    """
+    scale_factor: float = 1.0
+    """How much to scale the camera origins by."""
+    downscale_factor: Optional[int] = None
+    """How much to downscale images. If not set, images are chosen such that the max dimension is <1600px."""
+    scene_scale: float = 1.0
+    """How much to scale the region of interest by."""
+    orientation_method: Literal["up", "none"] = "up"
+    """The method to use for orientation."""
+    center_poses: bool = False
+    """Whether to center the poses."""
+    auto_scale_poses: bool = True
+    """Whether to automatically scale the poses to fit in +/- 1 bounding box."""
     load_pairs: bool = False
     """whether to load pairs for multi-view consistency"""
     neighbors_num: Optional[int] = None
@@ -166,7 +173,7 @@ class SDFStudioDataParserConfig(DataParserConfig):
     """sub sampling validation images"""
     train_val_no_overlap: bool = False
     """remove selected / sampled validation images from training set"""
-    auto_orient: bool = False
+    auto_orient: bool = True
     """automatically orient the scene such that the up direction is the same as the viewer's up direction"""
     load_dtu_highres: bool = False
     """load high resolution images from DTU dataset, should only be used for the preprocessed DTU dataset"""
@@ -181,6 +188,10 @@ class SDFStudio(DataParser):
     def _generate_dataparser_outputs(self, split="train"):  # pylint: disable=unused-argument,too-many-statements
         # load meta data
         meta = load_from_json(self.config.data / "meta_data.json")
+
+        assert (
+            self.config.load_dtu_highres != self.config.include_mono_prior
+        ), "load_dtu_highres and include_mono_prior are mutually exclusive."
 
         indices = list(range(len(meta["frames"])))
         # subsample to avoid out-of-memory for validation set
@@ -218,14 +229,6 @@ class SDFStudio(DataParser):
                 intrinsics[0, 2] += 200
                 height, width = 1200, 1600
                 meta["height"], meta["width"] = height, width
-            
-            # append data
-            fx.append(intrinsics[0, 0])
-            fy.append(intrinsics[1, 1])
-            cx.append(intrinsics[0, 2])
-            cy.append(intrinsics[1, 2])
-            camera_to_worlds.append(camtoworld)
-            image_filenames.append(image_filename)
 
             if self.config.include_mono_prior:
                 assert meta["has_mono_prior"]
@@ -268,6 +271,14 @@ class SDFStudio(DataParser):
                 sfm_points_view = np.loadtxt(self.config.data / frame["sfm_sparse_points_view"])
                 sfm_points.append(torch.from_numpy(sfm_points_view).float())
 
+            # append data
+            image_filenames.append(image_filename)
+            fx.append(intrinsics[0, 0])
+            fy.append(intrinsics[1, 1])
+            cx.append(intrinsics[0, 2])
+            cy.append(intrinsics[1, 2])
+            camera_to_worlds.append(camtoworld)
+
         fx = torch.stack(fx)
         fy = torch.stack(fy)
         cx = torch.stack(cx)
@@ -278,10 +289,16 @@ class SDFStudio(DataParser):
         camera_to_worlds[:, 0:3, 1:3] *= -1
 
         if self.config.auto_orient:
+            if "orientation_override" in meta:
+                orientation_method = meta["orientation_override"]
+                CONSOLE.log(f"[yellow] Dataset is overriding orientation method to {orientation_method}")
+            else:
+                orientation_method = self.config.orientation_method
+
             camera_to_worlds, transform = camera_utils.auto_orient_and_center_poses(
                 camera_to_worlds,
-                method="up",
-                center_poses=False,
+                method=orientation_method,
+                center_poses=self.config.center_poses,
             )
 
             # we should also transform normal accordingly
@@ -292,6 +309,15 @@ class SDFStudio(DataParser):
                 normal_image = normal_image.permute(1, 0).reshape(h, w, 3)
                 normal_images_aligned.append(normal_image)
             normal_images = normal_images_aligned
+
+        # Scale poses
+        scale_factor = 1.0
+        if self.config.auto_scale_poses:
+            # TODO Naama: maybe we should also scale normals somehow
+            scale_factor /= float(torch.max(torch.abs(camera_to_worlds[:, :3, 3])))
+        scale_factor *= self.config.scale_factor
+
+        camera_to_worlds[:, :3, 3] *= scale_factor
 
         # scene box from meta data
         meta_scene_box = meta["scene_box"]
