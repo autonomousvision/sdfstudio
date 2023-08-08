@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional, Type
+from typing_extensions import Literal
 
 import numpy as np
 import torch
@@ -149,12 +150,17 @@ class SDFStudioDataParserConfig(DataParserConfig):
     """whether or not to load foreground mask"""
     include_sfm_points: bool = False
     """whether or not to load sfm points"""
-    downscale_factor: int = 1
-    scene_scale: float = 2.0
-    """
-    Sets the bounding cube to have edge length of this size.
-    The longest dimension of the Friends axis-aligned bbox will be scaled to this value.
-    """
+    scale_factor: float = 1.0
+    """How much to scale the camera origins by."""
+    # TODO supports downsample
+    # downscale_factor: Optional[int] = None
+    # """How much to downscale images. If not set, images are chosen such that the max dimension is <1600px."""
+    orientation_method: Literal["up", "none"] = "up"
+    """The method to use for orientation."""
+    center_poses: bool = False
+    """Whether to center the poses."""
+    auto_scale_poses: bool = True
+    """Whether to automatically scale the poses to fit in +/- 1 bounding box."""
     load_pairs: bool = False
     """whether to load pairs for multi-view consistency"""
     neighbors_num: Optional[int] = None
@@ -166,10 +172,18 @@ class SDFStudioDataParserConfig(DataParserConfig):
     """sub sampling validation images"""
     train_val_no_overlap: bool = False
     """remove selected / sampled validation images from training set"""
-    auto_orient: bool = False
+    auto_orient: bool = True
     """automatically orient the scene such that the up direction is the same as the viewer's up direction"""
     load_dtu_highres: bool = False
     """load high resolution images from DTU dataset, should only be used for the preprocessed DTU dataset"""
+
+
+def filter_list(list_to_filter, indices):
+    """Returns a copy list with only selected indices"""
+    if list_to_filter:
+        return [list_to_filter[i] for i in indices]
+    else:
+        return []
 
 
 @dataclass
@@ -183,6 +197,7 @@ class SDFStudio(DataParser):
         meta = load_from_json(self.config.data / "meta_data.json")
 
         indices = list(range(len(meta["frames"])))
+
         # subsample to avoid out-of-memory for validation set
         if split != "train" and self.config.skip_every_for_val_split >= 1:
             indices = indices[:: self.config.skip_every_for_val_split]
@@ -190,6 +205,7 @@ class SDFStudio(DataParser):
             # if you use this option, training set should not contain any image in validation set
             if self.config.train_val_no_overlap:
                 indices = [i for i in indices if i % self.config.skip_every_for_val_split != 0]
+        # print(split, indices)
 
         image_filenames = []
         depth_images = []
@@ -203,21 +219,10 @@ class SDFStudio(DataParser):
         cy = []
         camera_to_worlds = []
         for i, frame in enumerate(meta["frames"]):
-            if i not in indices:
-                continue
-
             image_filename = self.config.data / frame["rgb_path"]
 
             intrinsics = torch.tensor(frame["intrinsics"])
             camtoworld = torch.tensor(frame["camtoworld"])
-
-            # append data
-            image_filenames.append(image_filename)
-            fx.append(intrinsics[0, 0])
-            fy.append(intrinsics[1, 1])
-            cx.append(intrinsics[0, 2])
-            cy.append(intrinsics[1, 2])
-            camera_to_worlds.append(camtoworld)
 
             # here is hard coded for DTU high-res images
             if self.config.load_dtu_highres:
@@ -226,7 +231,7 @@ class SDFStudio(DataParser):
                 intrinsics[0, 2] += 200
                 height, width = 1200, 1600
                 meta["height"], meta["width"] = height, width
-            
+
             if self.config.include_mono_prior:
                 assert meta["has_mono_prior"]
                 # load mono depth
@@ -258,7 +263,17 @@ class SDFStudio(DataParser):
             if self.config.include_foreground_mask:
                 assert meta["has_foreground_mask"]
                 # load foreground mask
-                foreground_mask = np.array(Image.open(self.config.data / frame["foreground_mask"]), dtype="uint8")
+                if self.config.load_dtu_highres:
+                    # filenames format is 000.png
+                    foreground_mask = np.array(
+                        Image.open(
+                            self.config.data / "mask" / frame["foreground_mask"].replace("_foreground_mask", "")[-7:]
+                        ),
+                        dtype="uint8",
+                    )
+                else:
+                    # filenames format is 000000_foreground_mask.png
+                    foreground_mask = np.array(Image.open(self.config.data / frame["foreground_mask"]), dtype="uint8")
                 foreground_mask = foreground_mask[..., :1]
                 foreground_mask_images.append(torch.from_numpy(foreground_mask).float() / 255.0)
 
@@ -267,6 +282,14 @@ class SDFStudio(DataParser):
                 # load sparse sfm points
                 sfm_points_view = np.loadtxt(self.config.data / frame["sfm_sparse_points_view"])
                 sfm_points.append(torch.from_numpy(sfm_points_view).float())
+
+            # append data
+            image_filenames.append(image_filename)
+            fx.append(intrinsics[0, 0])
+            fy.append(intrinsics[1, 1])
+            cx.append(intrinsics[0, 2])
+            cy.append(intrinsics[1, 2])
+            camera_to_worlds.append(camtoworld)
 
         fx = torch.stack(fx)
         fy = torch.stack(fy)
@@ -278,10 +301,16 @@ class SDFStudio(DataParser):
         camera_to_worlds[:, 0:3, 1:3] *= -1
 
         if self.config.auto_orient:
+            if "orientation_override" in meta:
+                orientation_method = meta["orientation_override"]
+                CONSOLE.log(f"[yellow] Dataset is overriding orientation method to {orientation_method}")
+            else:
+                orientation_method = self.config.orientation_method
+
             camera_to_worlds, transform = camera_utils.auto_orient_and_center_poses(
                 camera_to_worlds,
-                method="up",
-                center_poses=False,
+                method=orientation_method,
+                center_poses=self.config.center_poses,
             )
 
             # we should also transform normal accordingly
@@ -292,6 +321,15 @@ class SDFStudio(DataParser):
                 normal_image = normal_image.permute(1, 0).reshape(h, w, 3)
                 normal_images_aligned.append(normal_image)
             normal_images = normal_images_aligned
+
+        # Scale poses
+        scale_factor = 1.0
+        if self.config.auto_scale_poses:
+            # TODO Naama: maybe we should also scale normals somehow
+            scale_factor /= float(torch.max(torch.abs(camera_to_worlds[:, :3, 3])))
+        scale_factor *= self.config.scale_factor
+
+        camera_to_worlds[:, :3, 3] *= scale_factor
 
         # scene box from meta data
         meta_scene_box = meta["scene_box"]
@@ -306,13 +344,13 @@ class SDFStudio(DataParser):
 
         height, width = meta["height"], meta["width"]
         cameras = Cameras(
-            fx=fx,
-            fy=fy,
-            cx=cx,
-            cy=cy,
+            fx=fx[indices],
+            fy=fy[indices],
+            cx=cx[indices],
+            cy=cy[indices],
             height=height,
             width=width,
-            camera_to_worlds=camera_to_worlds[:, :3, :4],
+            camera_to_worlds=camera_to_worlds[indices, :3, :4],
             camera_type=CameraType.PERSPECTIVE,
         )
 
@@ -321,7 +359,13 @@ class SDFStudio(DataParser):
 
         if self.config.include_mono_prior:
             additional_inputs_dict = {
-                "cues": {"func": get_depths_and_normals, "kwargs": {"depths": depth_images, "normals": normal_images}}
+                "cues": {
+                    "func": get_depths_and_normals,
+                    "kwargs": {
+                        "depths": filter_list(depth_images, indices),
+                        "normals": filter_list(normal_images, indices),
+                    },
+                }
             }
         else:
             additional_inputs_dict = {}
@@ -329,19 +373,19 @@ class SDFStudio(DataParser):
         if self.config.include_sensor_depth:
             additional_inputs_dict["sensor_depth"] = {
                 "func": get_sensor_depths,
-                "kwargs": {"sensor_depths": sensor_depth_images},
+                "kwargs": {"sensor_depths": filter_list(sensor_depth_images, indices)},
             }
 
         if self.config.include_foreground_mask:
             additional_inputs_dict["foreground_masks"] = {
                 "func": get_foreground_masks,
-                "kwargs": {"fg_masks": foreground_mask_images},
+                "kwargs": {"fg_masks": filter_list(foreground_mask_images, indices)},
             }
 
         if self.config.include_sfm_points:
             additional_inputs_dict["sfm_points"] = {
                 "func": get_sparse_sfm_points,
-                "kwargs": {"sfm_points": sfm_points},
+                "kwargs": {"sfm_points": filter_list(sfm_points, indices)},
             }
         # load pair information
         pairs_path = self.config.data / "pairs.txt"
@@ -357,9 +401,10 @@ class SDFStudio(DataParser):
                     sources_array = [sources_array[0]] + sources_array[:1:-1]
                 pairs_srcs.append(sources_array)
             pairs_srcs = torch.tensor(pairs_srcs)
-            all_imgs = torch.stack(
-                [get_image(image_filename) for image_filename in sorted(image_filenames)], axis=0
-            ).cuda()
+            # TODO: check correctness of sorting
+            all_imgs = torch.stack([get_image(image_filename) for image_filename in sorted(image_filenames)], axis=0)[
+                indices
+            ].cuda()
 
             additional_inputs_dict["pairs"] = {
                 "func": get_src_from_pairs,
@@ -371,12 +416,19 @@ class SDFStudio(DataParser):
                 },
             }
 
+        # print("n depth images", len(filter_list(depth_images, indices)))
+        # print("n normal images", len(filter_list(normal_images, indices)))
+        # for key_1, value in additional_inputs_dict.items():
+        #     print(key_1)
+        #     for key_2, value in value["kwargs"].items():
+        #         print(key_2, len(value))
+
         dataparser_outputs = DataparserOutputs(
-            image_filenames=image_filenames,
+            image_filenames=filter_list(image_filenames, indices),
             cameras=cameras,
             scene_box=scene_box,
             additional_inputs=additional_inputs_dict,
-            depths=depth_images,
-            normals=normal_images,
+            depths=filter_list(depth_images, indices),
+            normals=filter_list(normal_images, indices),
         )
         return dataparser_outputs

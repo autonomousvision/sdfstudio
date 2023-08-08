@@ -25,7 +25,7 @@ from typing import Dict, List, Tuple, Type
 import torch
 import torch.nn.functional as F
 from torch.nn import Parameter
-from torchmetrics import PeakSignalNoiseRatio
+from torchmetrics.image import PeakSignalNoiseRatio
 from torchmetrics.functional import structural_similarity_index_measure
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 from torchtyping import TensorType
