@@ -159,7 +159,7 @@ class SDFStudioDataParserConfig(DataParserConfig):
     """The method to use for orientation."""
     center_poses: bool = False
     """Whether to center the poses."""
-    auto_scale_poses: bool = True
+    auto_scale_poses: bool = False
     """Whether to automatically scale the poses to fit in +/- 1 bounding box."""
     load_pairs: bool = False
     """whether to load pairs for multi-view consistency"""
@@ -172,7 +172,7 @@ class SDFStudioDataParserConfig(DataParserConfig):
     """sub sampling validation images"""
     train_val_no_overlap: bool = False
     """remove selected / sampled validation images from training set"""
-    auto_orient: bool = True
+    auto_orient: bool = False
     """automatically orient the scene such that the up direction is the same as the viewer's up direction"""
     load_dtu_highres: bool = False
     """load high resolution images from DTU dataset, should only be used for the preprocessed DTU dataset"""
@@ -325,7 +325,6 @@ class SDFStudio(DataParser):
         # Scale poses
         scale_factor = 1.0
         if self.config.auto_scale_poses:
-            # TODO Naama: maybe we should also scale normals somehow
             scale_factor /= float(torch.max(torch.abs(camera_to_worlds[:, :3, 3])))
         scale_factor *= self.config.scale_factor
 
@@ -415,13 +414,6 @@ class SDFStudio(DataParser):
                     "neighbors_shuffle": self.config.neighbors_shuffle,
                 },
             }
-
-        # print("n depth images", len(filter_list(depth_images, indices)))
-        # print("n normal images", len(filter_list(normal_images, indices)))
-        # for key_1, value in additional_inputs_dict.items():
-        #     print(key_1)
-        #     for key_2, value in value["kwargs"].items():
-        #         print(key_2, len(value))
 
         dataparser_outputs = DataparserOutputs(
             image_filenames=filter_list(image_filenames, indices),
