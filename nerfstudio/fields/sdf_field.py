@@ -641,7 +641,9 @@ class SDFField(Field):
                 skip_spatial_distortion=True,
                 return_sdf=True,
             )
-            sampled_sdf = sampled_sdf.view(-1, *ray_samples.frustums.directions.shape[:-1]).permute(1, 2, 0).contiguous()
+            
+            # sampled_sdf = sampled_sdf.view(-1, *ray_samples.frustums.directions.shape[:-1]).permute(1, 2, 0).contiguous()
+            sampled_sdf = sampled_sdf.view(-1, *ray_samples.frustums.directions.shape[:-1]).transpose(0, -1).contiguous()
         else:
             d_output = torch.ones_like(sdf, requires_grad=False, device=sdf.device)
             gradients = torch.autograd.grad(

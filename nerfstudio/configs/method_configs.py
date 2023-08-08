@@ -115,7 +115,7 @@ method_configs["bakedangelo"] = Config(
         steps_per_eval_batch=5000,
         steps_per_save=20000,
         steps_per_eval_all_images=1000000,  # set to a very large model so we don't eval with all images
-        max_num_iterations=1000_001,
+        max_num_iterations=500_001,
         mixed_precision=False,
     ),
     pipeline=VanillaPipelineConfig(
@@ -150,26 +150,27 @@ method_configs["bakedangelo"] = Config(
                 hash_smoothstep=False,
                 use_position_encoding=False,
             ),
+            num_neus_samples_per_ray=32,
             eikonal_loss_mult=0.01,
             background_model="grid",
             proposal_weights_anneal_max_num_iters=10000,
             use_anneal_beta=True,
             eval_num_rays_per_chunk=1024,
             use_spatial_varying_eikonal_loss=False,
-            steps_per_level=10_000,
-            curvature_loss_warmup_steps=20_000,
+            steps_per_level=5_000,
+            curvature_loss_warmup_steps=5_000,
             beta_anneal_end=0.0002,
-            beta_anneal_max_num_iters=1000_000,
+            beta_anneal_max_num_iters=500_000,
         ),
     ),
     optimizers={
         "proposal_networks": {
             "optimizer": AdamOptimizerConfig(lr=1e-2, eps=1e-15),
-            "scheduler": MultiStepSchedulerConfig(max_steps=1000_000),
+            "scheduler": MultiStepSchedulerConfig(max_steps=500_000),
         },
         "fields": {
             "optimizer": AdamWOptimizerConfig(lr=1e-3, eps=1e-15, weight_decay=1e-2),
-            "scheduler": MultiStepWarmupSchedulerConfig(warm_up_end=5000, milestones=[600_000, 800_000], gamma=0.1),
+            "scheduler": MultiStepWarmupSchedulerConfig(warm_up_end=5000, milestones=[300_000, 400_000], gamma=0.1),
         },
         "field_background": {
             "optimizer": AdamWOptimizerConfig(lr=1e-3, eps=1e-15),
@@ -179,6 +180,7 @@ method_configs["bakedangelo"] = Config(
     viewer=ViewerConfig(num_rays_per_chunk=1 << 15),
     vis="viewer",
 )
+
 
 
 method_configs["neuralangelo"] = Config(

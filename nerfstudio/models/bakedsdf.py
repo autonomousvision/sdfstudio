@@ -25,7 +25,7 @@ import numpy as np
 import torch
 from torch.nn import Parameter
 
-from nerfstudio.cameras.rays import RayBundle
+from nerfstudio.cameras.rays import Frustums, RayBundle, RaySamples
 from nerfstudio.engine.callbacks import (
     TrainingCallback,
     TrainingCallbackAttributes,
@@ -156,7 +156,7 @@ class BakedSDFFactoModel(VolSDFModel):
             param_groups["field_background"] = list(self.field_background.parameters())
         else:
             param_groups["field_background"] = list(self.field_background)
-            
+
         return param_groups
 
     def get_training_callbacks(
@@ -235,7 +235,47 @@ class BakedSDFFactoModel(VolSDFModel):
     def sample_and_forward_field(self, ray_bundle: RayBundle):
         ray_samples, weights_list, ray_samples_list = self.proposal_sampler(ray_bundle, density_fns=self.density_fns)
         # TODO only forward the points that are inside the sphere
-        field_outputs = self.field(ray_samples)
+        if self.config.background_model != "none":
+            inside_sphere_mask = self.get_foreground_mask(ray_samples)
+
+            # construct fake ray samples based on the inside_sphere_mask
+            # Need to figure out a better way to describe positions with a ray.
+            positions = ray_samples.frustums.get_start_positions()
+            directions = ray_samples.frustums.directions
+            camera_indices = ray_samples.camera_indices
+
+            positions = positions.reshape(-1, 3)[inside_sphere_mask.reshape(-1).bool()]
+            directions = directions.reshape(-1, 3)[inside_sphere_mask.reshape(-1).bool()]
+            camera_indices = camera_indices.reshape(-1, 1)[inside_sphere_mask.reshape(-1).bool()]
+
+            ray_samples_inside = RaySamples(
+                frustums=Frustums(
+                    origins=positions,
+                    directions=directions,
+                    starts=torch.zeros_like(positions[..., :1]),
+                    ends=torch.zeros_like(positions[..., :1]),
+                    pixel_area=torch.ones_like(positions[..., :1]),
+                ),
+                camera_indices=camera_indices,
+            )
+
+            field_outputs = self.field(ray_samples_inside)
+
+            # merge outputs to the ray_samples shape
+            for key in field_outputs.keys():
+                out = field_outputs[key]
+                if out is not None:
+                    last_dim = out.shape[-1]
+                    merged_o = torch.ones(
+                        (*ray_samples.frustums.directions.shape[:-1], last_dim), dtype=out.dtype, device=out.device
+                    )
+                    merged_o = merged_o.reshape(-1, last_dim)
+                    merged_o[inside_sphere_mask.reshape(-1).bool()] = out
+                    merged_o = merged_o.reshape(*ray_samples.frustums.directions.shape[:-1], last_dim)
+                    field_outputs[key] = merged_o
+        else:
+            field_outputs = self.field(ray_samples)
+
         field_outputs[FieldHeadNames.ALPHA] = ray_samples.get_alphas(field_outputs[FieldHeadNames.DENSITY])
 
         if self.config.background_model != "none":
@@ -265,7 +305,6 @@ class BakedSDFFactoModel(VolSDFModel):
             # eikonal loss
             grad_theta = outputs["eik_grad"]
             if self.config.use_spatial_varying_eikonal_loss:
-
                 points_norm = outputs["points_norm"][..., 0]
                 points_weights = torch.where(points_norm <= 1, torch.ones_like(points_norm), points_norm)
 
@@ -307,4 +346,8 @@ class BakedSDFFactoModel(VolSDFModel):
     def get_metrics_dict(self, outputs, batch) -> Dict:
         metric_dict = super().get_metrics_dict(outputs, batch)
         metric_dict["eikonal_loss_mult"] = self.config.eikonal_loss_mult
+        if self.training and self.config.background_model != "none":
+            inside_sphere_mask = self.get_foreground_mask(outputs["ray_samples_list"][-1])
+            inside_sphere_mask_ratio = inside_sphere_mask.mean().item()
+            metric_dict["inside_sphere_mask_ratio"] = inside_sphere_mask_ratio
         return metric_dict
