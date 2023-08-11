@@ -157,7 +157,7 @@ class SDFStudioDataParserConfig(DataParserConfig):
     # """How much to downscale images. If not set, images are chosen such that the max dimension is <1600px."""
     orientation_method: Literal["up", "none"] = "up"
     """The method to use for orientation."""
-    center_poses: bool = False
+    center_method: Literal["focus", "none"] = "focus"
     """Whether to center the poses."""
     auto_scale_poses: bool = False
     """Whether to automatically scale the poses to fit in +/- 1 bounding box."""
@@ -310,7 +310,7 @@ class SDFStudio(DataParser):
             camera_to_worlds, transform = camera_utils.auto_orient_and_center_poses(
                 camera_to_worlds,
                 method=orientation_method,
-                center_poses=self.config.center_poses,
+                center_method=self.config.center_method,
             )
 
             # we should also transform normal accordingly
