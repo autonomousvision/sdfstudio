@@ -199,6 +199,9 @@ def main(args):
             frame["mono_depth_path"] = rgb_path.replace("_rgb.png", "_depth.npy")
             frame["mono_normal_path"] = rgb_path.replace("_rgb.png", "_normal.npy")
 
+        if args.foreground_mask:
+            frame["foreground_mask"] = rgb_path.replace("_rgb.png", "_mask.png")
+
         frames.append(frame)
         out_index += 1
 
@@ -209,7 +212,7 @@ def main(args):
         "width": tar_w,
         "has_mono_prior": args.mono_prior,
         "has_sensor_depth": args.sensor_depth,
-        "has_foreground_mask": False,
+        "has_foreground_mask": args.foreground_mask,
         "pairs": None,
         "worldtogt": scale_mat.tolist(),
         "scene_box": scene_box,
@@ -261,6 +264,8 @@ if __name__ == "__main__":
     parser.add_argument("--mono-prior", dest="mono_prior", action="store_true",
                         help="Whether to generate mono-prior depths and normals. "
                              "If enabled, the images will be cropped to 384*384")
+    parser.add_argument("--foreground-mask", dest="foreground_mask", action="store_true",
+                        help="Whether to add foreground masks to the json file")
     parser.add_argument("--crop-mult", dest="crop_mult", type=int, default=1,
                         help="image size will be resized to crop_mult*384, only take effect when enabling mono-prior")
     parser.add_argument("--omnidata-path", dest="omnidata_path",
