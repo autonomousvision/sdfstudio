@@ -123,9 +123,10 @@ def main(args):
 
     # === Resize the images and intrinsics ===
     # Only resize the images when we want to use mono prior
+    # Skip if we're using mini omnidata
     sample_img = cv2.imread(str(image_paths[0]))
     h, w, _ = sample_img.shape
-    if args.mono_prior:
+    if args.mono_prior and not args.mini_omnidata:
         # get smallest side to generate square crop
         target_crop = min(h, w)
         tar_h = tar_w = 384 * args.crop_mult
@@ -223,25 +224,42 @@ def main(args):
 
     # === Generate mono priors using omnidata ===
     if args.mono_prior:
-        assert os.path.exists(args.pretrained_models), "Pretrained model path not found"
-        assert os.path.exists(args.omnidata_path), "omnidata l path not found"
-        # generate mono depth and normal
-        print("Generating mono depth...")
-        os.system(
-            f"python scripts/datasets/extract_monocular_cues.py \
-            --omnidata_path {args.omnidata_path} \
-            --pretrained_model {args.pretrained_models} \
-            --img_path {output_dir} --output_path {output_dir} \
-            --task depth"
-        )
-        print("Generating mono normal...")
-        os.system(
-            f"python scripts/datasets/extract_monocular_cues.py \
-            --omnidata_path {args.omnidata_path} \
-            --pretrained_model {args.pretrained_models} \
-            --img_path {output_dir} --output_path {output_dir} \
-            --task normal"
-        )
+        if args.mini_omnidata:
+            assert os.path.exists(args.omnidata_path), "omnidata path not found"
+            print("Generating mono normal with mini omnidata...")
+            os.system(
+                f"python {args.omnidata_path}/run.py \
+                --images_dir {output_dir} --output_dir {output_dir} \
+                --task normal --model_path {args.omnidata_path}/pretrained_models/omnidata_dpt_normal_v2.ckpt --dtu_format"
+            )
+
+            print("Generating mono depth with mini omnidata...")
+            os.system(
+                f"python {args.omnidata_path}/run.py \
+                --images_dir {output_dir} --output_dir {output_dir} \
+                --task depth --model_path {args.omnidata_path}/pretrained_models/omnidata_dpt_depth_v2.ckpt --dtu_format"
+            )
+            
+        else:
+            assert os.path.exists(args.pretrained_models), "Pretrained model path not found"
+            assert os.path.exists(args.omnidata_path), "omnidata path not found"
+            # generate mono depth and normal
+            print("Generating mono depth...")
+            os.system(
+                f"python /home/ubuntu/Documents/omnidata/omnidata_tools/torch/extract_monocular_cues.py \
+                --omnidata_path {args.omnidata_path} \
+                --pretrained_model {args.pretrained_models} \
+                --img_path {output_dir} --output_path {output_dir} \
+                --task depth"
+            )
+            print("Generating mono normal...")
+            os.system(
+                f"python /home/ubuntu/Documents/omnidata/omnidata_tools/torch/extract_monocular_cues.py \
+                --omnidata_path {args.omnidata_path} \
+                --pretrained_model {args.pretrained_models} \
+                --img_path {output_dir} --output_path {output_dir} \
+                --task normal"
+            )
 
     print(f"Done! The processed data has been saved in {output_dir}")
 
@@ -270,10 +288,12 @@ if __name__ == "__main__":
                         help="image size will be resized to crop_mult*384, only take effect when enabling mono-prior")
     parser.add_argument("--omnidata-path", dest="omnidata_path",
                         default="<YOUR_DIR>/omnidata/omnidata_tools/torch",
-                        help="path to omnidata model")
+                        help="path to omnidata torch directory or mini-omnidata root directory if mini-omnidata is set to true")
     parser.add_argument("--pretrained-models", dest="pretrained_models",
                         default="<YOUR_DIR>/omnidata_tools/torch/pretrained_models/",
                         help="path to pretrained models")
+    parser.add_argument("--mini-omnidata", dest="mini_omnidata", action="store_true",
+                        help="use mini-omnidata to generate normals and depth for any image size. Requires --omnidata-path pointing to your mini-omnidata path")
 
     args = parser.parse_args()
 
