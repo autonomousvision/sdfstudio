@@ -90,17 +90,6 @@ class BakedSDFModelConfig(VolSDFModelConfig):
     eikonal_loss_mult_start: float = 0.01
     eikonal_loss_mult_end: float = 0.1
     eikonal_loss_mult_slop: float = 2.0
-    s3im_loss_mult: float = 0.0
-    """S3IM loss multiplier."""
-    s3im_kernel_size: int = 4
-    """S3IM kernel size."""
-    s3im_stride: int = 4
-    """S3IM stride."""
-    s3im_repeat_time: int = 10
-    """S3IM repeat time."""
-    s3im_patch_height: int = 32
-    """S3IM virtual patch height."""
-
 
 class BakedSDFFactoModel(VolSDFModel):
     """BakedSDF model
