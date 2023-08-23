@@ -33,7 +33,7 @@ from nerfstudio.field_components.encodings import NeRFEncoding
 from nerfstudio.field_components.field_heads import FieldHeadNames
 from nerfstudio.field_components.temporal_distortions import TemporalDistortionKind
 from nerfstudio.fields.vanilla_nerf_field import NeRFField
-from nerfstudio.model_components.losses import MSELoss
+from nerfstudio.model_components.losses import MSELoss, S3IM
 from nerfstudio.model_components.ray_samplers import PDFSampler, UniformSampler
 from nerfstudio.model_components.renderers import (
     AccumulationRenderer,
@@ -58,6 +58,16 @@ class VanillaModelConfig(ModelConfig):
     """Specifies whether or not to include ray warping based on time."""
     temporal_distortion_params: Dict[str, Any] = to_immutable_dict({"kind": TemporalDistortionKind.DNERF})
     """Parameters to instantiate temporal distortion with"""
+    s3im_loss_mult: float = 0.0
+    """S3IM loss multiplier."""
+    s3im_kernel_size: int = 4
+    """S3IM kernel size."""
+    s3im_stride: int = 4
+    """S3IM stride."""
+    s3im_repeat_time: int = 10
+    """S3IM repeat time."""
+    s3im_patch_height: int = 32
+    """S3IM virtual patch height."""
 
 
 class NeRFModel(Model):
@@ -75,6 +85,8 @@ class NeRFModel(Model):
         self.field_coarse = None
         self.field_fine = None
         self.temporal_distortion = None
+        self.s3im_func = S3IM(kernel_size=self.config.s3im_kernel_size, stride=self.config.s3im_stride, repeat_time=self.config.s3im_repeat_time, patch_height=self.config.s3im_patch_height, patch_width=self.config.s3im_patch_width)
+
 
         super().__init__(
             config=config,

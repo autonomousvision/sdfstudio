@@ -36,7 +36,7 @@ from nerfstudio.engine.callbacks import (
 from nerfstudio.field_components.field_heads import FieldHeadNames
 from nerfstudio.field_components.spatial_distortions import SceneContraction
 from nerfstudio.fields.sdf_field import SDFFieldConfig
-from nerfstudio.model_components.losses import L1Loss
+from nerfstudio.model_components.losses import L1Loss, S3IM
 from nerfstudio.model_components.ray_samplers import (
     ErrorBoundedSampler,
     LinearDisparitySampler,
@@ -63,6 +63,16 @@ class DtoOModelConfig(NerfactoModelConfig):
     """smoothness loss on surface points in unisurf"""
     sdf_field: SDFFieldConfig = SDFFieldConfig()
     """Config for SDF Field"""
+    s3im_loss_mult: float = 0.0
+    """S3IM loss multiplier."""
+    s3im_kernel_size: int = 4
+    """S3IM kernel size."""
+    s3im_stride: int = 4
+    """S3IM stride."""
+    s3im_repeat_time: int = 10
+    """S3IM repeat time."""
+    s3im_patch_height: int = 32
+    """S3IM virtual patch height."""
 
 
 class DtoOModel(NerfactoModel):
@@ -137,6 +147,8 @@ class DtoOModel(NerfactoModel):
         self.method = "neus"
 
         self.rgb_loss = L1Loss()
+        self.s3im_loss = S3IM(kernel_size=self.config.s3im_kernel_size, stride=self.config.s3im_stride, repeat_time=self.config.s3im_repeat_time, patch_height=self.config.s3im_patch_height, patch_width=self.config.s3im_patch_width)
+
 
     def get_training_callbacks(
         self, training_callback_attributes: TrainingCallbackAttributes
@@ -486,6 +498,10 @@ class DtoOModel(NerfactoModel):
             # eikonal loss
             surface_points_grad = outputs["surface_grad"]
             loss_dict["eikonal_loss"] = ((surface_points_grad.norm(2, dim=-1) - 1) ** 2).mean() * 0.0001
+
+            # s3im loss
+            if self.config.s3im_loss_mult > 0:
+                loss_dict["s3im_loss"] = self.s3im_loss(image, outputs["orgb"]) * self.config.s3im_loss_mult
 
             # surface points loss
             surface_points_sdf = outputs["surface_sdf"]
