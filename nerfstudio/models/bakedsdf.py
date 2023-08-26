@@ -190,26 +190,6 @@ class BakedSDFFactoModel(VolSDFModel):
                 )
             )
 
-        if self.config.use_anneal_beta:
-            # anneal the beta of volsdf before each training iterations
-            M = self.config.beta_anneal_max_num_iters
-            beta_init = self.config.beta_anneal_init
-            beta_end = self.config.beta_anneal_end
-
-            def set_beta(step):
-                # bakedsdf's beta schedule
-                train_frac = np.clip(step / M, 0, 1)
-                beta = beta_init / (1 + (beta_init - beta_end) / beta_end * (train_frac**0.8))
-                self.field.laplace_density.beta.data[...] = beta
-
-            callbacks.append(
-                TrainingCallback(
-                    where_to_run=[TrainingCallbackLocation.BEFORE_TRAIN_ITERATION],
-                    update_every_num_iters=1,
-                    func=set_beta,
-                )
-            )
-
         if self.config.use_anneal_eikonal_weight:
             # anneal the beta of volsdf before each training iterations
             K = self.config.eikonal_anneal_max_num_iters
