@@ -76,6 +76,7 @@ class NeRFModel(Model):
         self.field_fine = None
         self.temporal_distortion = None
 
+
         super().__init__(
             config=config,
             **kwargs,

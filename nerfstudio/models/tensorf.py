@@ -72,6 +72,16 @@ class TensoRFModelConfig(ModelConfig):
     """Number of components in color encoding"""
     appearance_dim: int = 27
     """Number of channels for color encoding"""
+    s3im_loss_mult: float = 0.0
+    """S3IM loss multiplier."""
+    s3im_kernel_size: int = 4
+    """S3IM kernel size."""
+    s3im_stride: int = 4
+    """S3IM stride."""
+    s3im_repeat_time: int = 10
+    """S3IM repeat time."""
+    s3im_patch_height: int = 32
+    """S3IM virtual patch height."""
 
 
 class TensoRFModel(Model):
@@ -183,6 +193,8 @@ class TensoRFModel(Model):
 
         # losses
         self.rgb_loss = MSELoss()
+        self.s3im_loss = S3IM(s3im_kernel_size=self.config.s3im_kernel_size, s3im_stride=self.config.s3im_stride, s3im_repeat_time=self.config.s3im_repeat_time, s3im_patch_height=self.config.s3im_patch_height)
+
 
         # metrics
         self.psnr = PeakSignalNoiseRatio(data_range=1.0)
@@ -245,8 +257,10 @@ class TensoRFModel(Model):
         image = batch["image"].to(device)
 
         rgb_loss = self.rgb_loss(image, outputs["rgb"])
-
         loss_dict = {"rgb_loss": rgb_loss}
+        # s3im loss
+        if self.config.s3im_loss_mult > 0:
+            loss_dict["s3im_loss"] = self.s3im_loss(image, outputs["rgb"]) * self.config.s3im_loss_mult
         loss_dict = misc.scale_dict(loss_dict, self.config.loss_coefficients)
         return loss_dict
 
