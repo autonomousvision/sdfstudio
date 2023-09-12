@@ -19,9 +19,9 @@ Implementation of VolSDF.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import List, Type, Tuple, Dict
-import numpy as np
+from typing import Dict, List, Tuple, Type
 
+import numpy as np
 import torch
 from torch.nn import Parameter
 
@@ -32,10 +32,10 @@ from nerfstudio.engine.callbacks import (
     TrainingCallbackLocation,
 )
 from nerfstudio.field_components.field_heads import FieldHeadNames
-from nerfstudio.models.neus import NeuSModel, NeuSModelConfig
 from nerfstudio.fields.density_fields import HashMLPDensityField
 from nerfstudio.model_components.losses import interlevel_loss, interlevel_loss_zip
 from nerfstudio.model_components.ray_samplers import ProposalNetworkSampler
+from nerfstudio.models.neus import NeuSModel, NeuSModelConfig
 from nerfstudio.utils import colormaps
 
 
@@ -73,15 +73,6 @@ class NeuSFactoModelConfig(NeuSModelConfig):
     """Max num iterations for the annealing function."""
     use_single_jitter: bool = True
     """Whether use single jitter or not for the proposal networks."""
-    use_anneal_beta: bool = False
-    """whether to anneal beta of neus or not similar to bakedsdf"""
-    beta_anneal_max_num_iters: int = 1000_000
-    """max num iterations for the annealing function of beta"""
-    beta_anneal_init: float = 0.05
-    """initial beta for annealing function"""
-    beta_anneal_end: float = 0.0002
-    """final beta for annealing function"""
-    # TODO move to base model config since it can be used in all models
     enable_progressive_hash_encoding: bool = False
     """whether to use progressive hash encoding"""
     enable_numerical_gradients_schedule: bool = False
@@ -179,27 +170,6 @@ class NeuSFactoModel(NeuSModel):
                     where_to_run=[TrainingCallbackLocation.AFTER_TRAIN_ITERATION],
                     update_every_num_iters=1,
                     func=self.proposal_sampler.step_cb,
-                )
-            )
-
-        if self.config.use_anneal_beta:
-            # anneal the beta of volsdf before each training iterations
-            M = self.config.beta_anneal_max_num_iters
-            beta_init = self.config.beta_anneal_init
-            beta_end = self.config.beta_anneal_end
-
-            def set_beta(step):
-                # bakedsdf's beta schedule adapted to neus
-                train_frac = np.clip(step / M, 0, 1)
-                beta = beta_init / (1 + (beta_init - beta_end) / beta_end * (train_frac**0.8))
-                beta = np.log(1.0 / beta) / 10.0
-                self.field.deviation_network.variance.data[...] = beta
-
-            callbacks.append(
-                TrainingCallback(
-                    where_to_run=[TrainingCallbackLocation.BEFORE_TRAIN_ITERATION],
-                    update_every_num_iters=1,
-                    func=set_beta,
                 )
             )
 
