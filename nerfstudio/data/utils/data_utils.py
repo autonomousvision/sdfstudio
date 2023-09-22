@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """Utility functions to allow easy re-use of common operations across dataloaders"""
+import os
 from pathlib import Path
 from typing import List, Tuple, Union
 
@@ -51,3 +52,28 @@ def get_semantics_and_mask_tensors_from_path(
     semantics = torch.from_numpy(np.array(pil_image, dtype="int64"))[..., None]
     mask = torch.sum(semantics == mask_indices, dim=-1, keepdim=True) == 0
     return semantics, mask
+
+
+def create_masked_img(img_filepath: Path, mask_filepath: Path, output_dir: Path) -> Path:
+    """
+    Utility function to mask an image using provided mask and store it on disk.
+    Output_dir is absolute path where to store the masked image.
+    """
+    img = np.array(Image.open(img_filepath), dtype=np.float32)
+    mask = np.array(Image.open(mask_filepath), dtype=np.float32) / 255.0
+    assert len(img.shape) == 3
+    if img.shape[-1] == 4:
+        img = img[:, :, :3]
+
+    # in case the mask comes with alpha channel
+    if mask.shape[-1] == 4:
+        mask = mask[:, :, :3]
+
+    if len(mask.shape) == 2:
+        mask = mask[..., np.newaxis]
+
+    masked_image = Image.fromarray((img * mask).astype(np.uint8))
+    masked_image_filename = output_dir / (img_filepath.stem + "_masked" + img_filepath.suffix)
+    masked_image.save(masked_image_filename)
+
+    return masked_image_filename

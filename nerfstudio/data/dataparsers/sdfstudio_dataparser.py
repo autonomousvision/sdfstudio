@@ -15,6 +15,7 @@
 """Data parser for friends dataset"""
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional, Type
@@ -34,6 +35,7 @@ from nerfstudio.data.dataparsers.base_dataparser import (
     DataparserOutputs,
 )
 from nerfstudio.data.scene_box import SceneBox
+from nerfstudio.data.utils.data_utils import create_masked_img
 from nerfstudio.utils.images import BasicImages
 from nerfstudio.utils.io import load_from_json
 
@@ -157,7 +159,7 @@ class SDFStudioDataParserConfig(DataParserConfig):
     # """How much to downscale images. If not set, images are chosen such that the max dimension is <1600px."""
     orientation_method: Literal["up", "none"] = "up"
     """The method to use for orientation."""
-    center_poses: bool = False
+    center_method: Literal["focus", "none"] = "focus"
     """Whether to center the poses."""
     auto_scale_poses: bool = False
     """Whether to automatically scale the poses to fit in +/- 1 bounding box."""
@@ -176,6 +178,12 @@ class SDFStudioDataParserConfig(DataParserConfig):
     """automatically orient the scene such that the up direction is the same as the viewer's up direction"""
     load_dtu_highres: bool = False
     """load high resolution images from DTU dataset, should only be used for the preprocessed DTU dataset"""
+    train_with_masked_imgs: bool = False
+    """whether or not to mask out objects using foreground masks and train with masked images"""
+    sample_from_mask: bool = False
+    """if true, pixels are sampled only from masked regions"""
+    masked_img_dir: str = "masked_images"
+    """name of the folder where masked images are stored if train_with_masked_imgs is true"""
 
 
 def filter_list(list_to_filter, indices):
@@ -209,6 +217,7 @@ class SDFStudio(DataParser):
 
         image_filenames = []
         depth_images = []
+        mask_filenames = []
         normal_images = []
         sensor_depth_images = []
         foreground_mask_images = []
@@ -220,6 +229,35 @@ class SDFStudio(DataParser):
         camera_to_worlds = []
         for i, frame in enumerate(meta["frames"]):
             image_filename = self.config.data / frame["rgb_path"]
+
+
+            if (
+                self.config.train_with_masked_imgs
+                or self.config.include_foreground_mask
+                or self.config.sample_from_mask
+            ):
+                assert meta["has_foreground_mask"]
+                mask_filename = self.config.data / frame["foreground_mask"]
+                mask = np.array(Image.open(mask_filename), dtype=np.float32) / 255.0
+                if len(mask.shape) == 3:
+                    mask = mask[..., 0]
+                if self.config.train_with_masked_imgs or self.config.sample_from_mask:
+                    masked_img_dir_path = self.config.data / self.config.masked_img_dir
+                    os.makedirs(str(masked_img_dir_path), exist_ok=True)
+
+            if self.config.train_with_masked_imgs:
+                image_filename = create_masked_img(image_filename, mask_filename, masked_img_dir_path)
+
+            if self.config.include_foreground_mask:
+                foreground_mask = mask[..., None]
+                foreground_mask_images.append(torch.from_numpy(foreground_mask).float())
+
+            if self.config.sample_from_mask:
+                # nerfstudio's pixel sampler requires single channel masks
+                mask_img = Image.fromarray((255.0 * mask).astype(np.uint8))
+                mask_filename = masked_img_dir_path / mask_filename.name
+                mask_img.save(mask_filename)
+                mask_filenames.append(mask_filename)
 
             intrinsics = torch.tensor(frame["intrinsics"])
             camtoworld = torch.tensor(frame["camtoworld"])
@@ -236,6 +274,8 @@ class SDFStudio(DataParser):
                 assert meta["has_mono_prior"]
                 # load mono depth
                 depth = np.load(self.config.data / frame["mono_depth_path"])
+                if self.config.train_with_masked_imgs:
+                    depth = depth * mask
                 depth_images.append(torch.from_numpy(depth).float())
 
                 # load mono normal
@@ -258,6 +298,9 @@ class SDFStudio(DataParser):
                 assert meta["has_sensor_depth"]
                 # load sensor depth
                 sensor_depth = np.load(self.config.data / frame["sensor_depth_path"])
+                if self.config.train_with_masked_imgs:
+                    # TODO: Maybe set background depth to very large value instead of 0?
+                    sensor_depth = sensor_depth * mask
                 sensor_depth_images.append(torch.from_numpy(sensor_depth).float())
 
             if self.config.include_foreground_mask:
@@ -310,7 +353,7 @@ class SDFStudio(DataParser):
             camera_to_worlds, transform = camera_utils.auto_orient_and_center_poses(
                 camera_to_worlds,
                 method=orientation_method,
-                center_poses=self.config.center_poses,
+                center_method=self.config.center_method,
             )
 
             # we should also transform normal accordingly
@@ -418,6 +461,7 @@ class SDFStudio(DataParser):
         dataparser_outputs = DataparserOutputs(
             image_filenames=filter_list(image_filenames, indices),
             cameras=cameras,
+            mask_filenames=mask_filenames if self.config.sample_from_mask else None,
             scene_box=scene_box,
             additional_inputs=additional_inputs_dict,
             depths=filter_list(depth_images, indices),
