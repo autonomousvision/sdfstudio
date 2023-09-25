@@ -20,7 +20,7 @@ A model, at a high level, takes in regions of space described by RayBundle objec
 
 ## Functions to Implement
 
-[The code](https://github.com/nerfstudio-project/nerfstudio/blob/master/nerfstudio/models/base_model.py) is quite verbose, so here we distill the most important functions with succint descriptions.
+[The code](https://github.com/nerfstudio-project/nerfstudio/blob/master/nerfstudio/models/base_model.py) is quite verbose, so here we distill the most important functions with succinct descriptions.
 
 ```python
 class Model:
