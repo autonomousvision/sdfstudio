@@ -20,7 +20,7 @@ A model, at a high level, takes in regions of space described by RayBundle objec
 
 ## Functions to Implement
 
-[The code](https://github.com/nerfstudio-project/nerfstudio/blob/master/nerfstudio/models/base_model.py) is quite verbose, so here we distill the most important functions with succint descriptions.
+[The code](https://github.com/nerfstudio-project/nerfstudio/blob/master/nerfstudio/models/base_model.py) is quite verbose, so here we distill the most important functions with succinct descriptions.
 
 ```python
 class Model:
@@ -52,7 +52,7 @@ class Model:
         """Returns the training callbacks, such as updating a density grid for Instant NGP."""
 
     def get_outputs(self, ray_bundle: RayBundle):
-        """Process a RayBundle object and return RayOutputs describing quanties for each ray."""
+        """Process a RayBundle object and return RayOutputs describing quantities for each ray."""
 
     def get_metrics_dict(self, outputs, batch):
         """Returns metrics dictionary which will be plotted with wandb or tensorboard."""

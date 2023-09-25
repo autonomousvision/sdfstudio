@@ -30,7 +30,7 @@ The json file (meta_data.json) stores meta data of the scene and has the followi
   'has_mono_prior': true, # use monocular cues or not
   'pairs': 'pairs.txt', # pairs file used for multi-view photometric consistency loss
   'worldtogt': [
-      [1, 0, 0, 0], # world to gt transformation (useful for evauation)
+      [1, 0, 0, 0], # world to gt transformation (useful for evaluation)
       [0, 1, 0, 0],
       [0, 0, 1, 0],
       [0, 0, 0, 1],
@@ -52,7 +52,7 @@ The json file (meta_data.json) stores meta data of the scene and has the followi
     },
   'frames': [ # this contains information for each image
       {
-        # note that all paths are relateive path
+        # note that all paths are relative path
         # path of rgb image
         'rgb_path': '000000_rgb.png',
         # camera to world transform
@@ -134,7 +134,7 @@ ns-download-data sdfstudio --dataset-name neural-rgbd-data
 Then run the following command to convert the downloaded neural-rgbd dataset to SDFStudio format:
 
 ```bash
-# kitchen scene for example, replca the scene path to convert other scenes
+# kitchen scene for example, replica the scene path to convert other scenes
 python scripts/datasets/process_neuralrgbd_to_sdfstudio.py --input_path data/neural-rgbd-data/kitchen/ --output_path data/neural_rgbd/kitchen_sensor_depth --type sensor_depth
 ```
 
