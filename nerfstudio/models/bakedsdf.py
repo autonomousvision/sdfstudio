@@ -256,9 +256,8 @@ class BakedSDFFactoModel(VolSDFModel):
         return samples_and_field_outputs
 
     def get_loss_dict(self, outputs, batch, metrics_dict=None):
-        loss_dict = {}
         image = batch["image"].to(self.device)
-        loss_dict["rgb_loss"] = self.rgb_loss(image, outputs["rgb"])
+        loss_dict = super().get_loss_dict(outputs, batch, metrics_dict)
 
         if self.training:
             # eikonal loss
