@@ -43,6 +43,9 @@ from nerfstudio.configs.base_config import Config  # pylint: disable=unused-impo
 from nerfstudio.pipelines.base_pipeline import Pipeline
 from nerfstudio.utils.rich_utils import ItersPerSecColumn
 
+from matplotlib import pyplot as plt
+import os
+
 CONSOLE = Console(width=120)
 
 
@@ -257,7 +260,7 @@ def render_trajectory(
             images.append(outputs[rgb_output_name].cpu().numpy())
             depths.append(outputs[depth_output_name].cpu().numpy())
 
-            import os
+            
             if 'normals' in outputs:
                 if not os.path.exists('export/normals/'):
                     os.makedirs('export/normals/')
