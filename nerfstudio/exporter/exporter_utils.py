@@ -256,4 +256,28 @@ def render_trajectory(
                 sys.exit(1)
             images.append(outputs[rgb_output_name].cpu().numpy())
             depths.append(outputs[depth_output_name].cpu().numpy())
+
+            import os
+            if 'normals' in outputs:
+                if not os.path.exists('export/normals/'):
+                    os.makedirs('export/normals/')
+                plt.imsave(f'export/normals/{camera_idx}.png', outputs["normals"].cpu().numpy())
+            if not os.path.exists('export/images/'):
+                os.makedirs('export/images/')
+            if not os.path.exists('export/depths/'):
+                os.makedirs('export/depths/')
+            if not os.path.exists('export/accumulation/'):
+                os.makedirs('export/accumulation/')
+            if not os.path.exists('export/weights/'):
+                os.makedirs('export/weights/')
+            weights = outputs["weights"].cpu().numpy()
+            for i in range(weights.shape[0])[weights.shape[0]//2-2:weights.shape[0]//2+2]:
+                for j in range(weights.shape[1])[weights.shape[1]//2-2:weights.shape[1]//2+2]:
+                    plt.plot(weights[i][j], label=f'{i} {j}')
+            plt.ylim(0,0.25)
+            plt.savefig(f'export/weights/{camera_idx}.png')
+            plt.clf()
+            plt.imsave(f'export/images/{camera_idx}.png', images[camera_idx])
+            plt.imsave(f'export/depths/{camera_idx}.png', depths[camera_idx].squeeze())
+            plt.imsave(f'export/accumulation/{camera_idx}.png', outputs['accumulation'].cpu().numpy().squeeze())
     return images, depths
