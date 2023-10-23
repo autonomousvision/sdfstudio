@@ -118,7 +118,7 @@ class ExportTSDFMesh(Exporter):
     """Minimum of the bounding box, used if use_bounding_box is True."""
     bounding_box_max: Tuple[float, float, float] = (1, 1, 1)
     """Minimum of the bounding box, used if use_bounding_box is True."""
-    texture_method: Literal["tsdf", "nerf"] = "nerf"
+    texture_method: Literal["tsdf", "nerf"] = "tsdf"
     """Method to texture the mesh with. Either 'tsdf' or 'nerf'."""
     px_per_uv_triangle: int = 4
     """Number of pixels per UV triangle."""
