@@ -120,7 +120,7 @@ class SurfaceModelConfig(ModelConfig):
     """S3IM virtual patch height."""
     sdf_field: SDFFieldConfig = SDFFieldConfig()
     """Config for SDF Field"""
-    background_model: Literal["grid", "mlp", "none"] = "mlp"
+    background_model: Literal["grid", "mlp", "none"] = "none"
     """background models"""
     num_samples_outside: int = 32
     """Number of samples outside the bounding sphere for backgound"""
@@ -152,7 +152,8 @@ class SurfaceModel(Model):
         else:
             raise ValueError("Invalid scene contraction norm")
 
-        self.scene_contraction = SceneContraction(order=order)
+        # self.scene_contraction = SceneContraction(order=order)
+        self.scene_contraction = None
         # Can we also use contraction for sdf?
         # Fields
         self.field = self.config.sdf_field.setup(
@@ -161,7 +162,7 @@ class SurfaceModel(Model):
             num_images=self.num_train_data,
             use_average_appearance_embedding=self.config.use_average_appearance_embedding,
         )
-
+        self.scene_box.collider_type = "box"
         # Collider
         if self.scene_box.collider_type == "near_far":
             self.collider = NearFarCollider(near_plane=self.scene_box.near, far_plane=self.scene_box.far)
@@ -334,11 +335,13 @@ class SurfaceModel(Model):
             "depth": depth,
             "normal": normal,
             "weights": weights,
-            "ray_points": self.scene_contraction(
-                ray_samples.frustums.get_start_positions()
-            ),  # used for creating visiblity mask
             "directions_norm": ray_bundle.directions_norm,  # used to scale z_vals for free space and sdf loss
         }
+        if self.scene_contraction:
+            outputs["ray_points"] = self.scene_contraction(ray_samples.frustums.get_start_positions())
+        else:
+            outputs["ray_points"] = ray_samples.frustums.get_start_positions()
+
 
         if self.training:
             grad_points = field_outputs[FieldHeadNames.GRADIENT]
