@@ -47,6 +47,7 @@ from nerfstudio.model_components.renderers import (
 )
 from nerfstudio.models.base_model import Model, ModelConfig
 from nerfstudio.utils import colormaps, colors
+from nerfstudio.model_components.scene_colliders import AABBBoxCollider
 
 
 @dataclass
@@ -65,7 +66,7 @@ class InstantNGPModelConfig(ModelConfig):
     """Number of samples in field evaluation."""
     grid_resolution: int = 128
     """Resolution of the grid used for the field."""
-    contraction_type: ContractionType = ContractionType.UN_BOUNDED_SPHERE
+    contraction_type: ContractionType = ContractionType.AABB
     """Resolution of the grid used for the field."""
     cone_angle: float = 0.004
     """Should be set to 0.0 for blender scenes but 1./256 for real scenes."""
@@ -77,7 +78,7 @@ class InstantNGPModelConfig(ModelConfig):
     """How far along ray to stop sampling."""
     use_appearance_embedding: bool = False
     """Whether to use an appearance embedding."""
-    background_color: Literal["random", "black", "white"] = "random"
+    background_color: Literal["random", "black", "white"] = "black"
     """The color that is given to untrained areas."""
     alpha_thre: float = 1e-2
     """alpha thres for visibility pruning in nerfacc, should set to 0 for the nerf-synthetic dataset"""
@@ -132,6 +133,8 @@ class NGPModel(Model):
         self.renderer_rgb = RGBRenderer(background_color=background_color)
         self.renderer_accumulation = AccumulationRenderer()
         self.renderer_depth = DepthRenderer(method="expected")
+
+        self.collider = AABBBoxCollider(self.scene_box)
 
         # losses
         self.rgb_loss = MSELoss()

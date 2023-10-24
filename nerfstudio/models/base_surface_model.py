@@ -213,7 +213,7 @@ class SurfaceModel(Model):
         )
         self.renderer_rgb = RGBRenderer(background_color=background_color)
         self.renderer_accumulation = AccumulationRenderer()
-        self.renderer_depth = DepthRenderer(method="expected")
+        self.renderer_depth = DepthRenderer(method="median")
         self.renderer_normal = SemanticRenderer()
         # patch warping
         self.patch_warping = PatchWarping(

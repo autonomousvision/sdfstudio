@@ -273,14 +273,35 @@ def render_trajectory(
                 os.makedirs('export/accumulation/')
             if not os.path.exists('export/weights/'):
                 os.makedirs('export/weights/')
-            weights = outputs["weights"].cpu().numpy()
-            for i in range(weights.shape[0])[weights.shape[0]//2-2:weights.shape[0]//2+2]:
-                for j in range(weights.shape[1])[weights.shape[1]//2-2:weights.shape[1]//2+2]:
-                    plt.plot(weights[i][j], label=f'{i} {j}')
-            plt.ylim(0,0.25)
-            plt.savefig(f'export/weights/{camera_idx}.png')
-            plt.clf()
-            plt.imsave(f'export/images/{camera_idx}.png', images[camera_idx])
+            try: 
+                weights = outputs["weights"].cpu().numpy()
+                for i in range(weights.shape[0])[weights.shape[0]//2-3:weights.shape[0]//2+3]:
+                    for j in range(weights.shape[1])[weights.shape[1]//2-3:weights.shape[1]//2+3]:
+                        plt.plot(weights[i][j], label=f'{i} {j}')
+                plt.ylim(0,0.25)
+                plt.savefig(f'export/weights/{camera_idx}.png')
+                plt.clf()
+            except:
+                pass
+
+            image = images[camera_idx]
+            height, width, _ = image.shape
+
+            box_size = 7
+            top_left_x = (width - box_size) // 2
+            top_left_y = (height - box_size) // 2
+            bottom_right_x = top_left_x + box_size
+            bottom_right_y = top_left_y + box_size
+
+            box_color = [1, 0, 0]
+
+            image[top_left_y, top_left_x:bottom_right_x] = box_color
+            image[bottom_right_y - 1, top_left_x:bottom_right_x] = box_color
+            image[top_left_y:bottom_right_y, top_left_x] = box_color
+            image[top_left_y:bottom_right_y, bottom_right_x - 1] = box_color
+
+            plt.imsave(f'export/images/{camera_idx}.png', image)
+            # plt.imsave(f'export/images/{camera_idx}.png', images[camera_idx])
             plt.imsave(f'export/depths/{camera_idx}.png', depths[camera_idx].squeeze())
             plt.imsave(f'export/accumulation/{camera_idx}.png', outputs['accumulation'].cpu().numpy().squeeze())
     return images, depths
