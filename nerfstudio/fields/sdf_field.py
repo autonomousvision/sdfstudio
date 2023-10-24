@@ -141,7 +141,7 @@ class SDFFieldConfig(FieldConfig):
     """sphere size of geometric initializaion"""
     geometric_init: bool = True
     """Whether to use geometric initialization"""
-    inside_outside: bool = True
+    inside_outside: bool = False
     """whether to revert signed distance value, set to True for indoor scene"""
     weight_norm: bool = True
     """Whether to use weight norm for linear laer"""
