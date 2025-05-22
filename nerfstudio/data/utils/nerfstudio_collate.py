@@ -23,7 +23,12 @@ from typing import Callable, Dict, Union
 
 import torch
 import torch.utils.data
-from torch._six import string_classes
+try:
+    # old PyTorch compatibility
+    from torch._six import string_classes
+except ImportError:
+    # fallback for torch versions that dropped _six
+    string_classes = (str,)
 
 from nerfstudio.cameras.cameras import Cameras
 from nerfstudio.utils.images import BasicImages
